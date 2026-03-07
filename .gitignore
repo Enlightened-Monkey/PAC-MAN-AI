@@ -1,0 +1,21 @@
+# Data directories
+data/raw/
+data/processed/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model artifacts
+*.pkl
+*.h5
+
+# OS
+.DS_Store
+
+# MLflow
+mlruns/
