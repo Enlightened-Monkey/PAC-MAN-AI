@@ -19,11 +19,40 @@ Usage
 
 from __future__ import annotations
 
+import os
+import warnings
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import mlflow
 from mlflow.tracking import MlflowClient
+
+# Repository root: <repo>/src/utils/mlflow_logger.py -> parents[2] is <repo>
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_MLRUNS_DIR = _REPO_ROOT / "mlruns"
+
+
+def _is_writable_dir(path: Path) -> bool:
+    """Return True if *path* (or its first existing ancestor) is writable."""
+    p = path
+    while not p.exists():
+        if p.parent == p:
+            return False
+        p = p.parent
+    return os.access(p, os.W_OK)
+
+
+def _artifact_location_is_usable(artifact_location: str | None) -> bool:
+    """Best-effort check that an MLflow artifact_location can be written to."""
+    if not artifact_location:
+        return False
+    parsed = urlparse(artifact_location)
+    if parsed.scheme in ("", "file"):
+        local = Path(parsed.path if parsed.scheme == "file" else artifact_location)
+        return _is_writable_dir(local)
+    # Non-local stores (s3://, http://, etc.) - assume the user knows best.
+    return True
 
 
 class MLflowLogger:
@@ -49,16 +78,80 @@ class MLflowLogger:
         run_name: str | None = None,
         tracking_uri: str | None = None,
         tags: dict[str, Any] | None = None,
+        artifact_location: str | None = None,
     ) -> None:
         self.experiment_name = experiment_name
         self.run_name = run_name
         self.tags = tags or {}
         self._run: mlflow.ActiveRun | None = None
 
+        # Default to a stable, repo-local sqlite tracking store + file
+        # artifact store so the configuration is the same regardless of the
+        # process cwd (e.g. notebooks running from a sub-directory) and we
+        # don't pick up stale databases left in cwd.
+        if tracking_uri is None and "MLFLOW_TRACKING_URI" not in os.environ:
+            _DEFAULT_MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
+            tracking_uri = f"sqlite:///{_REPO_ROOT / 'mlflow.db'}"
         if tracking_uri is not None:
             mlflow.set_tracking_uri(tracking_uri)
 
-        mlflow.set_experiment(experiment_name)
+        # Default artifact_location to a writable dir under the repo.
+        if artifact_location is None:
+            _DEFAULT_MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
+            artifact_location = _DEFAULT_MLRUNS_DIR.as_uri()
+        self._desired_artifact_location = artifact_location
+
+        self._ensure_experiment(experiment_name, artifact_location)
+
+    def _ensure_experiment(
+        self, experiment_name: str, artifact_location: str
+    ) -> None:
+        """Set the active experiment, recovering from a stale artifact_location.
+
+        If an experiment with *experiment_name* already exists but its
+        ``artifact_location`` points somewhere we cannot write to (e.g. an
+        unmounted external drive), MLflow will crash on the first
+        ``log_artifact`` call. Detect that situation up-front and either
+        rename the stale experiment aside or fall back to a fresh name.
+        """
+        client = MlflowClient()
+        existing = client.get_experiment_by_name(experiment_name)
+        if existing is None:
+            mlflow.create_experiment(experiment_name, artifact_location=artifact_location)
+            mlflow.set_experiment(experiment_name)
+            return
+
+        if _artifact_location_is_usable(existing.artifact_location):
+            mlflow.set_experiment(experiment_name)
+            return
+
+        warnings.warn(
+            f"[MLflowLogger] Experiment '{experiment_name}' has unwritable "
+            f"artifact_location='{existing.artifact_location}'. Renaming the "
+            "stale experiment and creating a fresh one with "
+            f"artifact_location='{artifact_location}'.",
+            stacklevel=2,
+        )
+        # Try to rename the broken experiment out of the way; if that fails,
+        # fall back to using a suffixed experiment name for this session.
+        try:
+            client.rename_experiment(
+                existing.experiment_id,
+                f"{experiment_name}_stale_{existing.experiment_id}",
+            )
+            mlflow.create_experiment(experiment_name, artifact_location=artifact_location)
+            mlflow.set_experiment(experiment_name)
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"[MLflowLogger] Could not rename stale experiment ({exc}); "
+                "using a suffixed experiment name instead.",
+                stacklevel=2,
+            )
+            fallback = f"{experiment_name}_local"
+            self.experiment_name = fallback
+            if client.get_experiment_by_name(fallback) is None:
+                mlflow.create_experiment(fallback, artifact_location=artifact_location)
+            mlflow.set_experiment(fallback)
 
     # ------------------------------------------------------------------
     # Context-manager interface
@@ -107,8 +200,20 @@ class MLflowLogger:
         mlflow.log_metrics(metrics, step=step)
 
     def log_artifact(self, local_path: str | Path, artifact_path: str | None = None) -> None:
-        """Upload a local file or directory to the run's artifact store."""
-        mlflow.log_artifact(str(local_path), artifact_path=artifact_path)
+        """Upload a local file or directory to the run's artifact store.
+
+        Failures to upload (e.g. an artifact_location that is no longer
+        writable) are logged as warnings rather than raised, so a long
+        training loop is never aborted by an MLflow bookkeeping error.
+        """
+        try:
+            mlflow.log_artifact(str(local_path), artifact_path=artifact_path)
+        except (PermissionError, OSError) as exc:
+            warnings.warn(
+                f"[MLflowLogger] Failed to log artifact '{local_path}': {exc}. "
+                "Continuing without uploading.",
+                stacklevel=2,
+            )
 
     def log_dict(self, data: dict[str, Any], artifact_file: str) -> None:
         """Serialize *data* as JSON and store it as an artefact."""

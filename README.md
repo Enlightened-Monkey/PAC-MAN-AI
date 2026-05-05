@@ -1,182 +1,160 @@
 # PAC-MAN-AI
 
-A machine-learning project that recreates a Pac-Man environment from scratch, trains a Reinforcement-Learning agent on it, and then adds a CNN-based vision layer so the agent can operate on raw pixel frames.
+End-to-end Reinforcement Learning project on **Pac-Man**, built around a
+custom-made `gymnasium` environment that faithfully reproduces the
+mechanics of the original 1980 arcade game (28×31 maze, 4 ghosts with
+authentic Target-Tile AI, scatter/chase/frightened wave schedule, ghost
+house, tunnel warp, Cruise Elroy, ghost combo scoring).
 
----
+The project covers MaskablePPO training (sb3-contrib), a CNN frame →
+state-vector regressor, MLflow experiment tracking and SHAP /
+permutation-based interpretability of the learned policy.
 
-## Repository Layout
+## 1. Problem Statement
+
+Train an agent that can play an arcade-faithful Pac-Man purely from the
+state vector exposed by our custom `gymnasium.Env`. We additionally train
+a CNN that recovers that same state vector from rendered frames so the
+RL policy can in principle be driven by pixels.
+
+## 2. Methods (advanced techniques)
+
+| # | Technique | Where | Course module |
+|---|-----------|-------|---------------|
+| 1 | **MaskablePPO** (Proximal Policy Optimization with action masking, sb3-contrib) on the custom CNN-channel environment | `notebooks/02_rl_training.ipynb`, `src/models/rl_agent.py` | Reinforcement Learning |
+| 2 | **CNN frame → state-vector regressor** (3 conv blocks + MLP head) bridging vision and the symbolic env | `notebooks/03_cnn_training.ipynb`, `src/models/cnn_detector.py` | Deep Learning / CV |
+| 3 | **Permutation importance + SHAP** attribution of the MaskablePPO critic (V(s)) | `notebooks/05_interpretability.ipynb` | Interpretability |
+
+## 3. Repository Layout
 
 ```
 PAC-MAN-AI/
-├── data/
-│   ├── raw/             # Original, unprocessed game recordings / screenshots
-│   └── processed/       # Pre-processed datasets ready for model training
 ├── notebooks/
-│   ├── 01_env_testing.ipynb          # Environment sanity checks & random rollouts
-│   ├── 02_rl_training.ipynb          # DQN / PPO training on the state vector
-│   ├── 03_cnn_training.ipynb         # CNN detector training on game frames
-│   ├── 04_pipeline_integration.ipynb # End-to-end: CNN → RL agent
-│   └── 05_interpretability.ipynb     # SHAP / LIME feature-importance analysis
+│   ├── 01_env_testing.ipynb             # Custom env sanity checks & EDA
+│   ├── 02_rl_training.ipynb             # DQN / PPO on the state vector
+│   ├── 03_cnn_training.ipynb            # CNN frame → state vector
+│   ├── 04_pipeline_integration.ipynb    # Frame → CNN → RL agent (end-to-end)
+│   └── 05_interpretability.ipynb        # Permutation / SHAP on the MaskablePPO policy
 ├── src/
 │   ├── environment/
-│   │   ├── game_logic.py   # Game rules, ghost AI, scoring
-│   │   └── pacman_env.py   # gymnasium.Env wrapper
+│   │   ├── game_logic.py                # Arcade-faithful game rules + ghost AI
+│   │   └── pacman_env.py                # gymnasium.Env wrapper
 │   ├── models/
-│   │   ├── cnn_detector.py # CNN architecture + inference helpers
-│   │   └── rl_agent.py     # DQN / PPO wrapper (Stable-Baselines3)
+│   │   ├── cnn_detector.py              # CNN architecture + inference
+│   │   └── rl_agent.py                  # DQN / PPO wrapper (SB3)
 │   └── utils/
-│       └── mlflow_logger.py # MLflow experiment-tracking helpers
+│       └── mlflow_logger.py             # MLflow context-manager helper
+├── models/                              # Trained checkpoints (git-ignored)
 ├── tests/
-│   └── test_environment.py  # pytest unit tests for game logic & environment
-├── mlruns/                  # MLflow run artefacts (git-ignored)
-├── reports/                 # Evaluation reports and plots
-├── .gitignore
+│   └── test_environment.py              # pytest unit tests (30 tests)
+├── reports/                             # Presentation PDF, EDA & training figures
+├── mlruns/                              # MLflow tracking data (git-ignored)
 ├── requirements.txt
+├── group_project_guidelines.pdf
+├── Pac-Man Arcade SI i Mechanika.pdf    # Reference: arcade mechanics
 └── README.md
 ```
 
----
+## 4. Notebook Map (matches the course-required structure)
 
-## Environment Architecture
-
-### `game_logic.py` – Internal state
-
-`GameState` is the authoritative source of truth.  It owns:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `maze` | `np.ndarray (ROWS, COLS)` | Cell values: 0=path, 1=wall, 2=pellet, 3=power-pellet |
-| `pacman_pos` | `(row, col)` | Current Pac-Man grid position |
-| `pacman_dir` | `int` | Last successful movement direction |
-| `ghosts` | `list[Ghost]` | 4 ghosts with individual AI and frightened state |
-| `score` | `int` | Cumulative score |
-| `lives` | `int` | Remaining lives (starts at 3) |
-| `scatter_mode` | `bool` | Ghost mode: scatter (corner targets) vs. chase (Pac-Man) |
-
-Ghost movement follows the GBA/Z80 algorithm:  
-- **Scatter** – each ghost heads toward its fixed corner target.  
-- **Chase** – Blinky targets Pac-Man directly; Pinky, Inky and Clyde use
-  offset/flanking targets.  
-- **Frightened** – random walk for `FRIGHTENED_DURATION` steps after a
-  power-pellet is collected.
-
-### Mapping internal state → observation vector (`pacman_env.py`)
-
-`GameState.to_observation()` serialises the full game state into a
-**flat `float32` vector** of length `_OBS_SIZE ≈ 460`:
-
-```
-Index range   Content
-─────────────────────────────────────────────────────────────────
-[0]           pacman_row / ROWS           (normalised position)
-[1]           pacman_col / COLS
-[2..5]        scatter_mode flag           (repeated 4×)
-[6..13]       ghost_row[i]/ROWS, ghost_col[i]/COLS  (4 ghosts)
-[14..17]      ghost_frightened[i]         (0.0 / 1.0)
-[18]          lives / 3
-[19]          remaining_pellets / total_pellets
-[20..]        maze cells / 3              (ROWS × COLS values)
-```
-
-All values are in **[0, 1]** and match `PacmanEnv.observation_space`
-(`gymnasium.spaces.Box`).
+| Required section | Implemented in |
+|------------------|----------------|
+| **Introduction** — problem & motivation | this README §1 + `notebooks/01_env_testing.ipynb` |
+| **Data / Environment loading & validation** | `notebooks/01_env_testing.ipynb` |
+| **EDA** — observation space, action space, reward distribution | `notebooks/01_env_testing.ipynb` |
+| **Feature engineering** — state-vector design, frame preprocessing | `src/environment/pacman_env.py`, `notebooks/03_cnn_training.ipynb` |
+| **Modeling** — DQN, PPO, CNN regressor (≥3 techniques) | `notebooks/02_rl_training.ipynb` + `notebooks/03_cnn_training.ipynb` |
+| **Evaluation** — episode return curves, rolling averages | `notebooks/02_rl_training.ipynb` |
+| **Interpretability** — permutation importance + SHAP | `notebooks/05_interpretability.ipynb` |
+| **Conclusions** | this README §8 + `notebooks/04_pipeline_integration.ipynb` |
 
 ---
 
-## Running Tests
-
-Install dependencies first:
+## 5. Setup
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run the full test suite:
+No external ROMs or third-party game binaries are required — the
+environment is implemented entirely in `src/environment/`.
 
+## 6. Running
+
+**Tests**
 ```bash
 pytest tests/ -v
 ```
 
-Run only the environment tests:
+**RL training** — open `notebooks/02_rl_training.ipynb` and run all cells.
+Training, MLflow logging and evaluation are produced in-notebook. The
+trained checkpoint is saved to `models/ppo_pacman.zip`.
 
+**CNN frame → state-vector** — `notebooks/03_cnn_training.ipynb`.
+
+**End-to-end pipeline** — `notebooks/04_pipeline_integration.ipynb`.
+
+**Interpretability** — `notebooks/05_interpretability.ipynb` loads
+`models/ppo_pacman.zip` and produces permutation-importance and
+SHAP GradientExplainer figures for the MaskablePPO critic.
+
+**MLflow UI**
 ```bash
-pytest tests/test_environment.py -v
+mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db
+# → http://localhost:5000
 ```
 
-Test coverage includes:
-- Maze shape and initial state validation  
-- Pac-Man movement (wall blocking, valid moves)  
-- Pellet and power-pellet scoring  
-- Ghost frightened state and timer  
-- Observation vector shape, dtype and value range  
-- Terminal condition detection  
-- `PacmanEnv` gymnasium interface (reset, step, render)  
+## 7. Custom Environment — quick reference
 
----
+`GameState` (in `src/environment/game_logic.py`) is the authoritative source
+of truth and is wrapped by `PacmanEnv` (`gymnasium.Env`). The maze is
+**28 columns × 31 rows** (the original arcade playfield). Pac-Man starts at
+`(23, 13)` facing LEFT; Blinky starts outside the ghost house at `(11, 13)`,
+Pinky/Inky/Clyde start inside.
 
-## Two-Stage Training Pipeline
-
-### Stage 1 – RL training on the ground-truth state vector
+`GameState.to_observation()` serialises the full state into a flat `float32`
+vector of length `_OBS_SIZE = 6 + 8 + 4 + 2 + ROWS*COLS = 888`, all values
+in `[0, 1]`:
 
 ```
-PacmanEnv.step(action)
-        │
-        ▼
-GameState.to_observation()  ──►  state vector (≈460 floats)
-        │
-        ▼
-   RL agent (DQN / PPO)      ──►  action  ──►  reward
+Index range   Content
+─────────────────────────────────────────────────────────────────
+[0..2)        pacman_row / ROWS, pacman_col / COLS
+[2..6)        mode flags: scatter, chase, frightened, spare
+[6..14)       ghost_row[i]/ROWS, ghost_col[i]/COLS  (4 ghosts)
+[14..18)      per-ghost frightened/eaten flag
+[18..19)      lives / 3
+[19..20)      remaining_pellets / total_pellets
+[20..]        maze cells / 5            (ROWS × COLS values)
 ```
 
-The agent receives the exact internal state vector from `GameState`.
-This stage is covered in `notebooks/02_rl_training.ipynb`.
+Ghost behaviour reproduces the *Pac-Man Dossier* algorithms:
 
-**Training command (script equivalent):**
+- **Per-ghost Target Tile**: Blinky targets Pac-Man (Cruise Elroy
+  acceleration when few pellets remain); Pinky targets 4 tiles ahead of
+  Pac-Man (with the original *Up overflow* bug); Inky uses Blinky's
+  position as a pivot; Clyde chases when far and scatters when close.
+- **Wave schedule**: alternating scatter / chase phases per level, with a
+  forced 180° reversal whenever the mode toggles.
+- **Frightened mode** triggered by power pellets (4 pellets at the
+  corners), with the documented slowdown and 200 / 400 / 800 / 1600 ghost
+  combo scoring.
+- **Ghost house** uses the per-ghost dot counter and a global release
+  timeout to control when each ghost leaves.
+- **Red zones** above the ghost house and on the upper tunnel forbid the
+  Up turn for chasing ghosts.
+- **Tunnel** wraps row 14 between columns 0–5 and 22–27 with the
+  documented half-speed slowdown.
 
-```python
-from src.environment.pacman_env import PacmanEnv
-from src.models.rl_agent import RLAgent
+## 8. Reproducibility & MLOps
 
-agent = RLAgent("dqn", PacmanEnv(), verbose=1)
-agent.train(total_timesteps=500_000)
-agent.save("models/dqn_pacman")
-```
-
-### Stage 2 – RL inference driven by CNN state estimation
-
-```
-Game screen (RGB frame)
-        │
-        ▼
- ObjectDetector.predict()   ──►  estimated state vector (≈460 floats)
-        │
-        ▼
-   Pre-trained RL agent      ──►  action
-```
-
-The CNN (`src/models/cnn_detector.py`) is trained to reproduce the
-same observation vector that `GameState.to_observation()` emits.
-After training, the RL agent weights are **frozen**; only the CNN is
-updated during Stage 2.  This stage is covered in
-`notebooks/03_cnn_training.ipynb` and `notebooks/04_pipeline_integration.ipynb`.
-
----
-
-## Experiment Tracking
-
-All training runs are logged with MLflow:
-
-```python
-from src.utils.mlflow_logger import MLflowLogger
-
-with MLflowLogger(experiment_name="rl_training") as logger:
-    logger.log_params({"algorithm": "DQN", "lr": 1e-4})
-    logger.log_metric("episode_reward", reward, step=step)
-    logger.log_artifact("models/dqn_pacman.zip")
-```
-
-View the UI locally:
-
-```bash
-mlflow ui --backend-store-uri mlruns/
-```
+- All training scripts seed `numpy`, `random` and `torch` (`RANDOM_SEED = 42`).
+- Hyperparameters and per-episode metrics are logged to **MLflow** (see
+  `src/utils/mlflow_logger.py`).
+- Trained checkpoints are saved under `models/` (git-ignored due to size;
+  re-run `notebooks/02_rl_training.ipynb` to regenerate).
+- `requirements.txt` pins all direct dependencies; `mlruns/`, `__pycache__/`,
+  `.ipynb_checkpoints/`, `*.pth`, `*.zip` and large binary artefacts are
+  git-ignored.

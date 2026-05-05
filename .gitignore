@@ -10,12 +10,15 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# Model artifacts
+# Model artifacts (checkpoints can be large — regenerate by running the notebooks)
 *.pkl
 *.h5
+*.pth
+*.zip
 
 # OS
 .DS_Store
 
 # MLflow
 mlruns/
+mlflow.db
