@@ -24,7 +24,7 @@ from src.environment.game_logic import (
     LIFE_PENALTY,
     DEFAULT_MAZE,
 )
-from src.environment.pacman_env import PacmanEnv, _OBS_SIZE
+from src.environment.pacman_env import PacmanEnv, PacmanPrototypeEnv, _OBS_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ class TestScoring:
                 maze[nr, nc] = 3
                 reward, _ = state.step(action)
                 assert reward >= POWER_PELLET_SCORE
-                assert all(g.is_frightened for g in state.ghosts)
+                assert state.frightened_timer > 0
                 return
         pytest.skip("No reachable cell found adjacent to Pac-Man.")
 
@@ -171,17 +171,16 @@ class TestGhostFrightened:
             if 0 <= nr < ROWS and 0 <= nc < COLS and state.maze[nr, nc] != 1:
                 state.maze[nr, nc] = 3
                 state.step(action)
-                assert all(g.is_frightened for g in state.ghosts)
+                assert state.frightened_timer > 0
                 return
         pytest.skip("No reachable cell for power-pellet test.")
 
     def test_ghost_frightened_timer_decrements(self):
         state = GameState(seed=0)
-        for ghost in state.ghosts:
-            ghost.frighten()
-        initial_timer = state.ghosts[0].frightened_timer
+        state.frightened_timer = 30
+        initial_timer = state.frightened_timer
         state.step(ACTION_LEFT)
-        assert state.ghosts[0].frightened_timer < initial_timer
+        assert state.frightened_timer < initial_timer
 
 
 class TestObservationVector:
@@ -270,3 +269,35 @@ class TestPacmanEnv:
         rendered = env.render()
         assert isinstance(rendered, str)
         assert "C" in rendered  # Pac-Man character
+
+    def test_truncates_at_max_steps(self):
+        env = PacmanEnv(seed=0, max_steps=1)
+        env.reset()
+        _, _, terminated, truncated, _ = env.step(ACTION_RIGHT)
+        assert truncated or terminated
+
+
+class TestPacmanPrototypeEnv:
+    def test_prototype_uses_same_observation_shape(self):
+        env = PacmanPrototypeEnv(seed=0)
+        obs, _ = env.reset()
+        assert obs.shape == (_OBS_SIZE,)
+
+    def test_prototype_has_step_limit_in_info(self):
+        env = PacmanPrototypeEnv(seed=0, max_steps=123)
+        _, info = env.reset()
+        assert info["max_steps"] == 123
+
+    def test_prototype_applies_step_penalty(self):
+        baseline = PacmanEnv(seed=0, max_steps=5, step_penalty=0.0, reward_scale=1.0)
+        prototype = PacmanPrototypeEnv(
+            seed=0,
+            max_steps=5,
+            step_penalty=-0.5,
+            reward_scale=1.0,
+        )
+        baseline.reset()
+        prototype.reset()
+        _, reward_base, _, _, _ = baseline.step(ACTION_RIGHT)
+        _, reward_proto, _, _, _ = prototype.step(ACTION_RIGHT)
+        assert reward_proto == pytest.approx(reward_base - 0.5)
