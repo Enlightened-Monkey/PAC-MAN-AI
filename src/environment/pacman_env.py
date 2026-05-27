@@ -25,10 +25,10 @@ from src.environment.game_logic import (
     DIRECTION_DELTAS,
 )
 
-# Observation vector length = 6 (pacman + mode) + 8 (ghost positions)
+# Observation vector length = 4 (pacman + frightened/flashing flags) + 8 (ghost positions)
 #                             + 4 (frightened flags) + 2 (lives, pellets)
 #                             + ROWS*COLS (maze) + 3 (fruit: active, row, col)
-_OBS_SIZE = 6 + 8 + 4 + 2 + ROWS * COLS + 3
+_OBS_SIZE = 4 + 8 + 4 + 2 + ROWS * COLS + 3
 
 
 class PacmanEnv(gym.Env):
@@ -37,13 +37,14 @@ class PacmanEnv(gym.Env):
 
     Observation space
     -----------------
-    A 1-D float32 vector of length ``_OBS_SIZE`` (≈ 460 values) containing:
+    A 1-D float32 vector of length ``_OBS_SIZE`` containing:
       - Pac-Man normalised row/col position
-      - Ghost mode flag (scatter vs chase)
+      - Frightened and flashing mode flags (2 values)
       - Normalised ghost row/col positions (4 ghosts)
       - Ghost frightened flags
       - Remaining lives and pellet ratio
       - Flattened normalised maze layout
+      - Active fruit flag + normalised position (3 values)
 
     Action space
     ------------

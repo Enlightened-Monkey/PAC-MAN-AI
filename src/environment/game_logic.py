@@ -843,18 +843,16 @@ class GameState:
         ------
         [0]       pacman_row / ROWS
         [1]       pacman_col / COLS
-        [2..5]    mode flags (4 floats): scatter, chase, frightened, flashing
-        [6..13]   ghost (row/ROWS, col/COLS) for each of the 4 ghosts
-        [14..17]  ghost frightened-active flag (1.0 if frightened & not eaten)
-        [18]      lives / 3
-        [19]      remaining_pellets / total_pellets
-        [20..]    flattened maze (each cell / max tile code)
+        [2..3]    mode flags (2 floats): frightened, flashing
+        [4..11]   ghost (row/ROWS, col/COLS) for each of the 4 ghosts
+        [12..15]  ghost frightened-active flag (1.0 if frightened & not eaten)
+        [16]      lives / 3
+        [17]      remaining_pellets / total_pellets
+        [18..]    flattened maze (each cell / max tile code)
         """
         obs: list[float] = [
             self.pacman_pos[0] / ROWS,
             self.pacman_pos[1] / COLS,
-            float(self.mode == "scatter"),
-            float(self.mode == "chase"),
             float(self.frightened_timer > 0),
             float(self.frightened_flashing),
         ]
