@@ -735,19 +735,38 @@ class GameState:
         if not self.house_queue:
             return
             
-        thresholds = {
-            "Pinky": 0,
-            "Inky": 100,
-            "Clyde": 200,
-        }
-        
+        # 1) Stuck timer release (Global release timeout)
+        # If no dots have been eaten for 4.0 seconds (40 ticks), force-release the active ghost.
+        if self.ticks_since_pellet >= GLOBAL_RELEASE_TIMEOUT:
+            next_ghost_name = self.house_queue[0]
+            next_ghost = next(g for g in self.ghosts if g.name == next_ghost_name)
+            self._release_ghost(next_ghost)
+            self.house_queue.pop(0)
+            self.ticks_since_pellet = 0
+            return
+
+        # 2) Dot-counter release
         next_ghost_name = self.house_queue[0]
         next_ghost = next(g for g in self.ghosts if g.name == next_ghost_name)
         
-        limit = thresholds.get(next_ghost_name, 0)
-        if self.step_count >= limit:
-            self._release_ghost(next_ghost)
-            self.house_queue.pop(0)
+        if self.using_global_dot_counter:
+            global_limits = {
+                "Pinky": 7,
+                "Inky": 17,
+                "Clyde": 32,
+            }
+            limit = global_limits.get(next_ghost_name, 999)
+            if self.global_dot_counter >= limit:
+                self._release_ghost(next_ghost)
+                self.house_queue.pop(0)
+            if self.global_dot_counter >= 32:
+                self.using_global_dot_counter = False
+        else:
+            limit = self.get_dot_limit(next_ghost_name, self.level)
+            personal_dots = self.pellets_eaten - next_ghost.pellets_at_entry
+            if personal_dots >= limit:
+                self._release_ghost(next_ghost)
+                self.house_queue.pop(0)
 
     def _release_ghost(self, g: Ghost) -> None:
         """Teleport a ghost from inside the house up to the exit tile."""

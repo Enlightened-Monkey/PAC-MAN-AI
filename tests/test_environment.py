@@ -404,3 +404,104 @@ class TestGameStateNextLevel:
         assert state.using_global_dot_counter is False
         assert state.global_dot_counter == 0
 
+
+class TestGhostHouseRelease:
+    def test_personal_dot_release(self):
+        state = GameState(seed=0)
+        # Initially, Pinky is in house but gets released very quickly (limit is 0)
+        pinky = next(g for g in state.ghosts if g.name == "Pinky")
+        inky = next(g for g in state.ghosts if g.name == "Inky")
+        clyde = next(g for g in state.ghosts if g.name == "Clyde")
+
+        # Pinky limit is 0, Inky is 30, Clyde is 60.
+        # Run step_count release logic manually to verify
+        # pinky is the first in queue
+        assert state.house_queue == ["Pinky", "Inky", "Clyde"]
+        
+        # Pinky should leave immediately since personal dots (0) >= limit (0)
+        state._update_ghost_house_release()
+        assert not pinky.in_house
+        assert state.house_queue == ["Inky", "Clyde"]
+
+        # Inky requires 30 dots
+        # Let's simulate eating 29 dots
+        state.pellets_eaten = 29
+        state._update_ghost_house_release()
+        assert inky.in_house
+
+        # 30th dot eaten
+        state.pellets_eaten = 30
+        state._update_ghost_house_release()
+        assert not inky.in_house
+        assert state.house_queue == ["Clyde"]
+
+        # Clyde requires 60 dots
+        state.pellets_eaten = 59
+        state._update_ghost_house_release()
+        assert clyde.in_house
+
+        state.pellets_eaten = 60
+        state._update_ghost_house_release()
+        assert not clyde.in_house
+        assert len(state.house_queue) == 0
+
+    def test_stuck_timer_release(self):
+        state = GameState(seed=0)
+        inky = next(g for g in state.ghosts if g.name == "Inky")
+        
+        # Release Pinky first
+        state._update_ghost_house_release()
+        assert state.house_queue == ["Inky", "Clyde"]
+        
+        # Set ticks_since_pellet to 40
+        state.ticks_since_pellet = 40
+        state._update_ghost_house_release()
+        # Inky should be released by stuck timer
+        assert not inky.in_house
+        assert state.house_queue == ["Clyde"]
+        assert state.ticks_since_pellet == 0
+
+    def test_global_dot_release(self):
+        state = GameState(seed=0)
+        pinky = next(g for g in state.ghosts if g.name == "Pinky")
+        inky = next(g for g in state.ghosts if g.name == "Inky")
+        clyde = next(g for g in state.ghosts if g.name == "Clyde")
+
+        # Simulate Pac-Man death to activate global counter
+        state._respawn(is_death=True)
+        assert state.using_global_dot_counter is True
+        assert state.global_dot_counter == 0
+        assert state.house_queue == ["Pinky", "Inky", "Clyde"]
+
+        # Pinky global limit is 7
+        state.global_dot_counter = 6
+        state._update_ghost_house_release()
+        assert pinky.in_house
+
+        state.global_dot_counter = 7
+        state._update_ghost_house_release()
+        assert not pinky.in_house
+        assert state.house_queue == ["Inky", "Clyde"]
+
+        # Inky global limit is 17
+        state.global_dot_counter = 16
+        state._update_ghost_house_release()
+        assert inky.in_house
+
+        state.global_dot_counter = 17
+        state._update_ghost_house_release()
+        assert not inky.in_house
+        assert state.house_queue == ["Clyde"]
+
+        # Clyde global limit is 32
+        state.global_dot_counter = 31
+        state._update_ghost_house_release()
+        assert clyde.in_house
+
+        state.global_dot_counter = 32
+        state._update_ghost_house_release()
+        assert not clyde.in_house
+        assert len(state.house_queue) == 0
+        assert state.using_global_dot_counter is False
+
+

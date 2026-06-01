@@ -143,6 +143,7 @@ class PacmanEnv(gym.Env):
             "lives": self._state.lives,
             "step": self._state.step_count,
             "max_steps": self._max_steps,
+            "level": self._state.level,
         }
 
     def _render_ansi(self) -> str:
@@ -312,6 +313,7 @@ class PacmanGridEnv(gym.Env):
         if self._state._all_pellets_eaten() and self._state.lives > 0:
             reward += 1000.0 / self._reward_div
             self._state._next_level()
+            self._prev_potential = self._potential()
 
 
         # Potential-based shaping (preserves optimal policy)
