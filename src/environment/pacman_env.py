@@ -108,6 +108,11 @@ class PacmanEnv(gym.Env):
         self, action: int
     ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         reward, done = self._state.step(int(action))
+        
+        if self._state._all_pellets_eaten() and self._state.lives > 0:
+            reward += 1000.0
+            self._state._next_level()
+            
         scaled_reward = (float(reward) * self._reward_scale) + self._step_penalty
         obs = self._state.to_observation()
 
@@ -141,23 +146,55 @@ class PacmanEnv(gym.Env):
         }
 
     def _render_ansi(self) -> str:
-        """Return a simple text representation of the current board."""
-        CELL_CHARS = {0: " ", 1: "#", 2: ".", 3: "o", 4: "-", 5: " "}
+        """Return a beautifully clean, ANSI-free Unicode text representation of the current board."""
         rows = []
-        maze = self._state.maze
-        ghost_positions = {g.pos: g.name[0] for g in self._state.ghosts}
+        state = self._state
+        maze = state.maze
+        
+        ghosts_at_pos = {}
+        for g in state.ghosts:
+            ghosts_at_pos[g.pos] = g
+
         for r in range(ROWS):
             row_str = ""
             for c in range(COLS):
                 pos = (r, c)
-                if pos == self._state.pacman_pos:
-                    row_str += "C"
-                elif pos in ghost_positions:
-                    row_str += ghost_positions[pos]
+                if pos == state.pacman_pos:
+                    direction = state.pacman_dir
+                    pac_char = "◀"
+                    if direction == ACTION_UP:
+                        pac_char = "▲"
+                    elif direction == ACTION_DOWN:
+                        pac_char = "▼"
+                    elif direction == ACTION_LEFT:
+                        pac_char = "◀"
+                    elif direction == ACTION_RIGHT:
+                        pac_char = "▶"
+                    row_str += pac_char
+                elif pos in ghosts_at_pos:
+                    g = ghosts_at_pos[pos]
+                    if g.eaten:
+                        row_str += "E"  # White eaten ghost eyes
+                    elif state.frightened_timer > 0:
+                        row_str += "S"  # Frightened/scared ghost
+                    else:
+                        row_str += g.name[0]  # B, P, I, C
                 else:
-                    row_str += CELL_CHARS.get(int(maze[r, c]), "?")
+                    tile_val = int(maze[r, c])
+                    if tile_val == 1:    # Wall
+                        row_str += "█"
+                    elif tile_val == 2:  # Pellet
+                        row_str += "·"
+                    elif tile_val == 3:  # Power Pellet
+                        row_str += "●"
+                    elif tile_val == 4:  # Door
+                        row_str += "═"
+                    else:
+                        row_str += " "
             rows.append(row_str)
         return "\n".join(rows)
+
+
 
 
 class PacmanPrototypeEnv(PacmanEnv):
@@ -212,11 +249,12 @@ class PacmanGridEnv(gym.Env):
 
     Reward shaping
     --------------
-    raw reward (pellet=10, power=50, ghost=200, death=-500) is divided by
-    `reward_scale_div` (default 100) and a small `step_penalty` is added
-    every tick. Optional potential-based shaping (PBRS) gives a dense
-    signal proportional to how much closer Pac-Man got to the nearest
-    remaining pellet (BFS distance on the static maze graph).
+    raw reward (pellet=10.0, power=50.0, ghost=200.0 to 1600.0, death=-500.0) is
+    divided by `reward_scale_div` (default 1.0) and an anti-stalling
+    `step_penalty` (default -0.25) is added every tick to penalize delays.
+    A massive Level Completion Bonus (+1000.0) is awarded when all pellets are
+    cleared. Optional potential-based shaping (PBRS) gives a dense signal
+    proportional to how much closer Pac-Man got to the nearest remaining pellet.
     """
 
     metadata = {"render_modes": [], "render_fps": 10}
@@ -224,7 +262,7 @@ class PacmanGridEnv(gym.Env):
     def __init__(
         self,
         seed: int | None = None,
-        max_steps: int = 2000,
+        max_steps: int = 5000,
         step_penalty: float = -0.01,
         reward_scale_div: float = 100.0,
         pbrs_coef: float = 0.05,
@@ -269,6 +307,12 @@ class PacmanGridEnv(gym.Env):
 
         # Scale + per-step penalty
         reward = raw_reward / self._reward_div + self._step_penalty
+
+        # Task Completion Bonus: massive +1000.0 (scaled by reward_div) when clearing all pellets
+        if self._state._all_pellets_eaten() and self._state.lives > 0:
+            reward += 1000.0 / self._reward_div
+            self._state._next_level()
+
 
         # Potential-based shaping (preserves optimal policy)
         if self._pbrs_coef > 0.0 and not done:
@@ -336,6 +380,7 @@ class PacmanGridEnv(gym.Env):
             "score": self._state.score,
             "lives": self._state.lives,
             "step": self._state.step_count,
+            "level": self._state.level,
         }
 
     def _potential(self) -> float:

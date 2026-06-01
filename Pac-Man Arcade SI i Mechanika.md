@@ -244,10 +244,10 @@ Bonus fruit appears **twice per level**, spawned in the corridor directly below 
 |:---:|:---|:---:|
 | 1 | Cherry | 100 |
 | 2 | Strawberry | 300 |
-| 3–4 | Orange | 500 |
+| 3–4 | Peach | 500 |
 | 5–6 | Apple | 700 |
-| 7–8 | Melon | 1,000 |
-| 9–10 | Galaxian | 2,000 |
+| 7–8 | Grapes | 1,000 |
+| 9–10 | Galaxian Boss | 2,000 |
 | 11–12 | Bell | 3,000 |
 | 13+ | Key | 5,000 |
 

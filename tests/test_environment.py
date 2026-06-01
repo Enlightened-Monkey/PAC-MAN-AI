@@ -183,6 +183,87 @@ class TestGhostFrightened:
         assert state.frightened_timer < initial_timer
 
 
+class TestCollisionSwap:
+    def test_collision_on_adjacent_swap_normal(self):
+        """Pac-Man and a ghost in adjacent cells moving towards each other must collide."""
+        state = GameState(seed=0)
+        state.mode = "chase"
+        
+        # Position Pac-Man and Blinky (index 0) adjacent to each other
+        state.pacman_pos = (23, 13)
+        state.pacman_dir = ACTION_LEFT
+        
+        blinky = state.ghosts[0]
+        blinky.in_house = False
+        blinky.eaten = False
+        blinky.pos = (23, 12)
+        blinky.direction = ACTION_RIGHT
+        
+        # Deactivate all other ghosts by putting them inside house
+        for g in state.ghosts[1:]:
+            g.in_house = True
+            g.pos = (14, 13)
+
+        # Prevent other ghosts from being released
+        state._update_ghost_house_release = lambda: None
+
+        # Mock Blinky's target tile to be far to the right to force him to move RIGHT
+        original_target_tile = state._target_tile
+        def mock_target_tile(ghost):
+            if ghost.name == "Blinky":
+                return (23, 20)
+            return original_target_tile(ghost)
+        state._target_tile = mock_target_tile
+
+        initial_lives = state.lives
+        # Pac-Man moves LEFT (to 23, 12) and Blinky moves RIGHT (to 23, 13). They swap.
+        state.step(ACTION_LEFT)
+        
+        # This swap must trigger a collision, causing Pac-Man to lose a life
+        assert state.lives == initial_lives - 1
+
+    def test_collision_on_adjacent_swap_frightened(self):
+        """Frightened ghost and Pac-Man swapping tiles must result in eating the ghost."""
+        state = GameState(seed=0)
+        state.pacman_pos = (23, 13)
+        state.pacman_dir = ACTION_LEFT
+        
+        blinky = state.ghosts[0]
+        blinky.in_house = False
+        blinky.eaten = False
+        blinky.pos = (23, 12)
+        blinky.direction = ACTION_RIGHT
+        
+        # Deactivate all other ghosts by putting them inside house
+        for g in state.ghosts[1:]:
+            g.in_house = True
+            g.pos = (14, 13)
+            
+        # Prevent other ghosts from being released
+        state._update_ghost_house_release = lambda: None
+
+        state.frightened_timer = 50
+        initial_score = state.score
+        
+        # Mock Blinky's movement in Frightened mode to guarantee he moves RIGHT
+        original_move_random = state._move_random
+        def mock_move_random(ghost):
+            if ghost.name == "Blinky":
+                ghost.direction = ACTION_RIGHT
+                ghost.pos = (23, 13)
+            else:
+                original_move_random(ghost)
+        state._move_random = mock_move_random
+        
+        # Step Pac-Man LEFT to swap positions with Blinky
+        state.step(ACTION_LEFT)
+        
+        # Since they swap, they must collide. Since the ghost is frightened, Blinky is eaten.
+        assert blinky.eaten is True
+        assert state.score > initial_score
+
+
+
 class TestObservationVector:
     def test_observation_shape(self):
         state = GameState(seed=0)
@@ -206,11 +287,15 @@ class TestTerminalConditions:
         state.lives = 0
         assert state.is_terminal()
 
-    def test_all_pellets_eaten_is_terminal(self):
+    def test_all_pellets_eaten_is_not_terminal_in_multilevel(self):
         state = GameState(seed=0)
         state.maze[state.maze == 2] = 0
         state.maze[state.maze == 3] = 0
-        assert state.is_terminal()
+        # In multi-level Pac-Man, clearing the board does NOT end the episode;
+        # instead, it transitions to the next level.
+        assert not state.is_terminal()
+        assert state._all_pellets_eaten()
+
 
 
 # ---------------------------------------------------------------------------
@@ -301,3 +386,21 @@ class TestPacmanPrototypeEnv:
         _, reward_base, _, _, _ = baseline.step(ACTION_RIGHT)
         _, reward_proto, _, _, _ = prototype.step(ACTION_RIGHT)
         assert reward_proto == pytest.approx(reward_base - 0.5)
+
+
+class TestGameStateNextLevel:
+    def test_next_level_resets_state_variables(self):
+        state = GameState(seed=0)
+        state.pellets_eaten = 50
+        state.ticks_since_pellet = 10
+        state.using_global_dot_counter = True
+        state.global_dot_counter = 15
+        
+        state._next_level()
+        
+        assert state.level == 2
+        assert state.pellets_eaten == 0
+        assert state.ticks_since_pellet == 0
+        assert state.using_global_dot_counter is False
+        assert state.global_dot_counter == 0
+
