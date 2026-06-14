@@ -23,8 +23,9 @@ from src.environment.game_logic import (
     GHOST_BASE_SCORE,
     LIFE_PENALTY,
     DEFAULT_MAZE,
+    OPPOSITE,
 )
-from src.environment.pacman_env import PacmanEnv, PacmanPrototypeEnv, _OBS_SIZE
+from src.environment.pacman_env import PacmanEnv, PacmanPrototypeEnv, PacmanGridEnv, _OBS_SIZE, _GRID_CHANNELS
 
 
 # ---------------------------------------------------------------------------
@@ -184,30 +185,26 @@ class TestGhostFrightened:
 
 
 class TestCollisionSwap:
-    def test_collision_on_adjacent_swap_normal(self):
-        """Pac-Man and a ghost in adjacent cells moving towards each other must collide."""
+    def test_no_collision_on_adjacent_swap_normal(self):
+        """Arcade pass-through: swapping tiles with a ghost does not kill Pac-Man."""
         state = GameState(seed=0)
         state.mode = "chase"
-        
-        # Position Pac-Man and Blinky (index 0) adjacent to each other
+
         state.pacman_pos = (23, 13)
         state.pacman_dir = ACTION_LEFT
-        
+
         blinky = state.ghosts[0]
         blinky.in_house = False
         blinky.eaten = False
         blinky.pos = (23, 12)
         blinky.direction = ACTION_RIGHT
-        
-        # Deactivate all other ghosts by putting them inside house
+
         for g in state.ghosts[1:]:
             g.in_house = True
             g.pos = (14, 13)
 
-        # Prevent other ghosts from being released
         state._update_ghost_house_release = lambda: None
 
-        # Mock Blinky's target tile to be far to the right to force him to move RIGHT
         original_target_tile = state._target_tile
         def mock_target_tile(ghost):
             if ghost.name == "Blinky":
@@ -216,49 +213,100 @@ class TestCollisionSwap:
         state._target_tile = mock_target_tile
 
         initial_lives = state.lives
-        # Pac-Man moves LEFT (to 23, 12) and Blinky moves RIGHT (to 23, 13). They swap.
         state.step(ACTION_LEFT)
-        
-        # This swap must trigger a collision, causing Pac-Man to lose a life
+        assert state.lives == initial_lives
+
+    def test_collision_on_same_cell_normal(self):
+        """Pac-Man and a ghost on the same tile must collide."""
+        state = GameState(seed=0)
+        state.mode = "chase"
+        state.pacman_pos = (23, 13)
+        state.pacman_dir = ACTION_LEFT
+        state.maze[23, 13] = 0
+
+        blinky = state.ghosts[0]
+        blinky.in_house = False
+        blinky.eaten = False
+        blinky.pos = (23, 13)
+        blinky.direction = ACTION_RIGHT
+
+        for g in state.ghosts[1:]:
+            g.in_house = True
+            g.pos = (14, 13)
+
+        state._update_ghost_house_release = lambda: None
+        state._move_ghost = lambda g: None
+        # Block Pac-Man movement so positions stay overlapping
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = 23 + dr, 13 + dc
+            if 0 <= nr < ROWS and 0 <= nc < COLS:
+                state.maze[nr, nc] = 1
+
+        initial_lives = state.lives
+        state.step(ACTION_LEFT)
         assert state.lives == initial_lives - 1
 
-    def test_collision_on_adjacent_swap_frightened(self):
-        """Frightened ghost and Pac-Man swapping tiles must result in eating the ghost."""
+    def test_no_collision_on_adjacent_swap_frightened(self):
+        """Frightened ghost swap does not count as eating (same-cell only)."""
         state = GameState(seed=0)
         state.pacman_pos = (23, 13)
         state.pacman_dir = ACTION_LEFT
-        
+        state.maze[23, 12] = 0
+
         blinky = state.ghosts[0]
         blinky.in_house = False
         blinky.eaten = False
         blinky.pos = (23, 12)
         blinky.direction = ACTION_RIGHT
-        
-        # Deactivate all other ghosts by putting them inside house
+
         for g in state.ghosts[1:]:
             g.in_house = True
             g.pos = (14, 13)
-            
-        # Prevent other ghosts from being released
+
         state._update_ghost_house_release = lambda: None
+        state.frightened_timer = 50
+        initial_score = state.score
+
+        original_move_ghost = state._move_ghost
+        def mock_move_ghost(g):
+            if g.name == "Blinky":
+                g.pos = (23, 14)
+            else:
+                original_move_ghost(g)
+        state._move_ghost = mock_move_ghost
+
+        state.step(ACTION_LEFT)
+        assert not blinky.eaten
+        assert state.score == initial_score
+
+    def test_eat_ghost_on_same_cell_frightened(self):
+        """Frightened ghost on the same tile as Pac-Man is eaten."""
+        state = GameState(seed=0)
+        state.pacman_pos = (23, 13)
+        state.pacman_dir = ACTION_LEFT
+        state.maze[23, 13] = 0
+
+        blinky = state.ghosts[0]
+        blinky.in_house = False
+        blinky.eaten = False
+        blinky.pos = (23, 13)
+        blinky.direction = ACTION_RIGHT
+
+        for g in state.ghosts[1:]:
+            g.in_house = True
+            g.pos = (14, 13)
+
+        state._update_ghost_house_release = lambda: None
+        state._move_ghost = lambda g: None
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = 23 + dr, 13 + dc
+            if 0 <= nr < ROWS and 0 <= nc < COLS:
+                state.maze[nr, nc] = 1
 
         state.frightened_timer = 50
         initial_score = state.score
-        
-        # Mock Blinky's movement in Frightened mode to guarantee he moves RIGHT
-        original_move_random = state._move_random
-        def mock_move_random(ghost):
-            if ghost.name == "Blinky":
-                ghost.direction = ACTION_RIGHT
-                ghost.pos = (23, 13)
-            else:
-                original_move_random(ghost)
-        state._move_random = mock_move_random
-        
-        # Step Pac-Man LEFT to swap positions with Blinky
+
         state.step(ACTION_LEFT)
-        
-        # Since they swap, they must collide. Since the ghost is frightened, Blinky is eaten.
         assert blinky.eaten is True
         assert state.score > initial_score
 
@@ -503,5 +551,166 @@ class TestGhostHouseRelease:
         assert not clyde.in_house
         assert len(state.house_queue) == 0
         assert state.using_global_dot_counter is False
+
+
+class TestPacmanGridEnv:
+    def test_observation_space_shape(self):
+        env = PacmanGridEnv(seed=0)
+        assert env.observation_space.shape == (_GRID_CHANNELS, ROWS, COLS)
+        assert _GRID_CHANNELS == 9
+
+    def test_reset_obs_within_bounds(self):
+        env = PacmanGridEnv(seed=0)
+        obs, info = env.reset()
+        assert obs.shape == (_GRID_CHANNELS, ROWS, COLS)
+        assert env.observation_space.contains(obs)
+        assert "pellet_completion" in info
+
+    def test_pbrs_disabled_by_default(self):
+        env = PacmanGridEnv(seed=0, human_fair=True)
+        assert env._pbrs_coef == 0.0
+
+    def test_level_clear_advances_level(self):
+        env = PacmanGridEnv(seed=0, pbrs_coef=0.0)
+        env.reset()
+        env._state.maze[env._state.maze == 2] = 0
+        env._state.maze[env._state.maze == 3] = 0
+        _, reward, terminated, truncated, info = env.step(ACTION_LEFT)
+        assert not terminated
+        assert info["level"] == 2
+        assert reward > 0
+        assert info["pellet_completion"] == pytest.approx(0.0)
+        assert info["level_clears"] == 1
+
+    def test_reward_tracks_score_delta(self):
+        env = PacmanGridEnv(seed=0)
+        env.reset()
+        prev_score = env._state.score
+        lives_before = env._state.lives
+        _, reward, _, _, info = env.step(ACTION_LEFT)
+        if env._state.lives == lives_before and info["level"] == 1:
+            expected = (env._state.score - prev_score) / 50.0 + env._step_penalty
+            assert reward == pytest.approx(expected)
+
+    def test_death_penalty_not_minus_ten(self):
+        # LIFE_PENALTY (-500 raw) must NOT leak into the shaped reward;
+        # death costs the flat death_penalty instead.
+        env = PacmanGridEnv(seed=0, death_penalty=-3.0)
+        assert env._death_penalty == pytest.approx(-3.0)
+
+    def test_constructor_seed_used_for_first_episode_only(self):
+        env = PacmanGridEnv(seed=123)
+        env.reset()
+        assert env._seed is None  # next reset draws fresh RNG
+
+    def test_pellet_completion_tracks_current_level(self):
+        env = PacmanGridEnv(seed=0)
+        env.reset()
+        env._state.pellets_eaten = 50
+        info = env._info()
+        assert info["pellet_completion"] == pytest.approx(50 / env._state.total_pellets)
+
+    def test_level_plane_in_observation(self):
+        env = PacmanGridEnv(seed=0)
+        env.reset()
+        obs = env._obs()
+        assert obs[8].min() == obs[8].max() == pytest.approx(1 / 5.0)
+        env._state.level = 3
+        obs = env._obs()
+        assert obs[8].min() == obs[8].max() == pytest.approx(3 / 5.0)
+
+    def test_lives_channel_reflects_remaining_lives(self):
+        env = PacmanGridEnv(seed=0)
+        env.reset()
+        obs, _ = env.reset()
+        assert obs[7].sum() == pytest.approx(3.0)
+        env._state.lives = 1
+        obs = env._obs()
+        assert obs[7].sum() == pytest.approx(1.0)
+
+    def test_fruit_channel_when_active(self):
+        env = PacmanGridEnv(seed=0)
+        env.reset()
+        env._state.fruit_active = True
+        obs = env._obs()
+        assert obs[6].sum() == pytest.approx(1.0)
+
+    def test_power_pellet_reverses_in_house_ghosts(self):
+        state = GameState(seed=0)
+        state._update_ghost_house_release = lambda: None
+        state._move_ghost = lambda g: None
+        inky = next(g for g in state.ghosts if g.name == "Inky")
+        assert inky.in_house
+        original_dir = inky.direction
+        r, c = state.pacman_pos
+        for action, (dr, dc) in [
+            (ACTION_UP, (-1, 0)),
+            (ACTION_DOWN, (1, 0)),
+            (ACTION_LEFT, (0, -1)),
+            (ACTION_RIGHT, (0, 1)),
+        ]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < ROWS and 0 <= nc < COLS and state.maze[nr, nc] != 1:
+                state.maze[nr, nc] = 3
+                state.step(action)
+                assert inky.direction == OPPOSITE[original_dir]
+                return
+        pytest.skip("No reachable cell for power-pellet reversal test.")
+
+    def test_milestone_bonus_once_at_threshold(self):
+        env = PacmanGridEnv(seed=0)
+        env.reset()
+        env._state.pellets_eaten = env._state.total_pellets - 1
+        reward1 = env._apply_milestone_rewards(0.0)
+        reward2 = env._apply_milestone_rewards(0.0)
+        assert reward1 == pytest.approx((150 + 300 + 600) / 50)
+        assert reward2 == pytest.approx(0.0)
+        assert len(env._milestones_hit) == 3
+
+    def test_milestone_reset_after_level_clear(self):
+        env = PacmanGridEnv(seed=0, pbrs_coef=0.0)
+        env.reset()
+        env._milestones_hit.add(0.90)
+        env._state.maze[env._state.maze == 2] = 0
+        env._state.maze[env._state.maze == 3] = 0
+        env.step(ACTION_LEFT)
+        assert 0.90 not in env._milestones_hit
+
+    def test_endgame_death_surcharge(self):
+        import types
+
+        env = PacmanGridEnv(seed=0, endgame_death_surcharge=-2.0)
+        env.reset()
+        env._state.pellets_eaten = int(0.86 * env._state.total_pellets)
+
+        def _mock_death_step(state, action: int):
+            state.lives -= 1
+            return 0, state.lives <= 0
+
+        env._state.step = types.MethodType(_mock_death_step, env._state)
+        _, reward, _, _, _ = env.step(ACTION_LEFT)
+        milestone = 0.0  # 86% completion — below 92% milestone threshold
+        expected = (
+            env._death_penalty
+            + env._endgame_death_surcharge
+            + env._step_penalty
+            + env._idle_penalty
+            + milestone
+        )
+        assert reward == pytest.approx(expected)
+
+    def test_completion_plane_when_enabled(self):
+        env = PacmanGridEnv(seed=0, include_completion_plane=True)
+        env.reset()
+        assert env.observation_space.shape[0] == 10
+        env._state.pellets_eaten = 50
+        obs = env._obs()
+        expected = 50 / env._state.total_pellets
+        assert obs[9].min() == obs[9].max() == pytest.approx(expected)
+
+    def test_easy_endgame_sets_elroy_threshold(self):
+        env = PacmanGridEnv(seed=0, easy_endgame=True)
+        env.reset()
+        assert env._state.elroy_pellets_threshold == 5
 
 

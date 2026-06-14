@@ -445,8 +445,14 @@ class GameState:
         else:
             return (5000, "Key")
 
-    def __init__(self, seed: int | None = None, level: int = 1) -> None:
+    def __init__(
+        self,
+        seed: int | None = None,
+        level: int = 1,
+        elroy_pellets_threshold: int | None = None,
+    ) -> None:
         self.rng = np.random.default_rng(seed)
+        self.elroy_pellets_threshold = elroy_pellets_threshold
         self.maze = DEFAULT_MAZE_ARR.copy()
         self.score = 0
         self.lives = 3
@@ -507,7 +513,7 @@ class GameState:
     # ------------------------------------------------------------------
 
     def reset(self, seed: int | None = None) -> None:
-        self.__init__(seed=seed)
+        self.__init__(seed=seed, level=1, elroy_pellets_threshold=self.elroy_pellets_threshold)
 
     def is_terminal(self) -> bool:
         return self.lives <= 0
@@ -588,10 +594,6 @@ class GameState:
         self.step_count += 1
         reward = 0
 
-        # Store initial positions for swap collision check
-        old_pacman_pos = self.pacman_pos
-        old_ghost_positions = {g.name: g.pos for g in self.ghosts}
-
         # 1) Move Pac-Man (with tunnel wraparound)
         dr, dc = DIRECTION_DELTAS[action]
         target = self._wrap_tunnel((self.pacman_pos[0] + dr, self.pacman_pos[1] + dc))
@@ -623,9 +625,9 @@ class GameState:
             self.frightened_timer = frightened_dur
             self.ghost_combo = 0
             
-            # Reversal requested on frightened mode activation
+            # Reversal requested on frightened mode activation (all active ghosts)
             for g in self.ghosts:
-                if not g.eaten and not g.in_house:
+                if not g.eaten:
                     g.direction = OPPOSITE[g.direction]
         else:
             self.ticks_since_pellet += 1
@@ -677,10 +679,8 @@ class GameState:
         for g in self.ghosts:
             if g.eaten or g.in_house:
                 continue
-            # Collide if sharing same cell or if they swapped positions during the step
-            is_collision = (g.pos == self.pacman_pos) or (
-                g.pos == old_pacman_pos and old_ghost_positions[g.name] == self.pacman_pos
-            )
+            # Arcade pass-through: only same-cell contact counts (swap does not kill)
+            is_collision = g.pos == self.pacman_pos
             if is_collision:
                 if self.frightened_timer > 0:
                     # Eat ghost — combo: 200, 400, 800, 1600
@@ -952,7 +952,12 @@ class GameState:
         # Scatter mode: each ghost heads for its favourite corner —
         # except Blinky in Cruise Elroy, who keeps chasing.
         remaining = self.total_pellets - self.pellets_eaten
-        elroy = (g.name == "Blinky") and (remaining <= ELROY1_PELLETS_REMAINING)
+        elroy_limit = (
+            self.elroy_pellets_threshold
+            if self.elroy_pellets_threshold is not None
+            else ELROY1_PELLETS_REMAINING
+        )
+        elroy = (g.name == "Blinky") and (remaining <= elroy_limit)
 
         if self.mode == "scatter" and not elroy:
             return g.scatter_corner
