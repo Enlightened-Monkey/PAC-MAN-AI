@@ -83,9 +83,16 @@ class ObjectDetector:
         PyTorch device string ('cpu', 'cuda', etc.).
     """
 
-    def __init__(self, obs_size: int, device: str = "cpu") -> None:
+    def __init__(self, obs_size: int, device: str | torch.device | None = "cpu") -> None:
         self.obs_size = obs_size
-        self.device = torch.device(device)
+        if device is None or device == "auto":
+            from src.utils.device_helper import get_best_device
+            self.device = get_best_device()
+        elif isinstance(device, str):
+            self.device = torch.device(device)
+        else:
+            self.device = device
+            
         self.cnn = PacmanCNN(out_features=256).to(self.device)
         self.projection = nn.Linear(256, obs_size).to(self.device)
         self.sigmoid = nn.Sigmoid()
