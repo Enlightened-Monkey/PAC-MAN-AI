@@ -1,0 +1,7 @@
+<frozen runpy>:130: RuntimeWarning: 'src.models.segmentation_detector' found in sys.modules after import of package 'src.models', but prior to execution of 'src.models.segmentation_detector'; this may result in unpredictable behaviour
+{
+  "train_loss": 0.0783185139298439,
+  "val_loss": 0.08054883033037186,
+  "best_val_loss": 0.08045085519552231
+}
+Saved checkpoint: models/segmentation_unet_long.pt

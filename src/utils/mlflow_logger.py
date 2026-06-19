@@ -91,7 +91,7 @@ class MLflowLogger:
         # don't pick up stale databases left in cwd.
         if tracking_uri is None and "MLFLOW_TRACKING_URI" not in os.environ:
             _DEFAULT_MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
-            tracking_uri = f"sqlite:///{_REPO_ROOT / 'mlflow.db'}"
+            tracking_uri = f"sqlite:///{_DEFAULT_MLRUNS_DIR / 'mlflow.db'}"
         if tracking_uri is not None:
             mlflow.set_tracking_uri(tracking_uri)
 

@@ -1,0 +1,117 @@
+{
+  "sheet": "Arcade - Pac-Man - Miscellaneous - General Sprites.png",
+  "frame_size": [
+    224,
+    248
+  ],
+  "tile_size": 8,
+  "layout": {
+    "backgrounds": [
+      "backgrounds/maze/maze_with_pellets.png",
+      "backgrounds/maze/maze_empty.png"
+    ],
+    "tiles": [
+      "tiles/collectibles/pellet.png",
+      "tiles/collectibles/power_pellet.png"
+    ],
+    "characters": {
+      "pacman": {
+        "right": "characters/pacman/normal/right/",
+        "left": "characters/pacman/normal/left/",
+        "up": "characters/pacman/normal/up/",
+        "down": "characters/pacman/normal/down/"
+      },
+      "ghosts": {
+        "blinky": "characters/ghosts/blinky/normal/",
+        "pinky": "characters/ghosts/pinky/normal/",
+        "inky": "characters/ghosts/inky/normal/",
+        "clyde": "characters/ghosts/clyde/normal/"
+      },
+      "frightened": "characters/ghosts/shared/frightened/",
+      "eyes": "characters/ghosts/shared/eyes/"
+    },
+    "items": {
+      "fruits": "items/fruits/"
+    },
+    "indexes": {
+      "backgrounds": "backgrounds/index.json",
+      "tiles": "tiles/index.json",
+      "characters": "characters/index.json",
+      "items": "items/index.json"
+    }
+  },
+  "crops": {
+    "maze_with_pellets": [
+      0,
+      0,
+      224,
+      248
+    ],
+    "maze_empty": [
+      228,
+      0,
+      452,
+      248
+    ],
+    "pellet": [
+      8,
+      8,
+      16,
+      16
+    ],
+    "power_pellet": [
+      8,
+      24,
+      16,
+      32
+    ],
+    "pacman": [
+      520,
+      16,
+      536,
+      32
+    ],
+    "fruit": [
+      488,
+      48,
+      504,
+      64
+    ],
+    "blinky": [
+      456,
+      64,
+      472,
+      80
+    ],
+    "pinky": [
+      456,
+      80,
+      472,
+      96
+    ],
+    "inky": [
+      456,
+      96,
+      472,
+      112
+    ],
+    "clyde": [
+      456,
+      112,
+      472,
+      128
+    ],
+    "frightened_ghost": [
+      584,
+      64,
+      600,
+      80
+    ],
+    "ghost_eyes": [
+      584,
+      80,
+      600,
+      96
+    ]
+  }
+}

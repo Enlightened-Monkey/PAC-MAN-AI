@@ -1,0 +1,12 @@
+{
+  "fruits": {
+    "cherry": "items/fruits/cherry/frame_00.png",
+    "strawberry": "items/fruits/strawberry/frame_00.png",
+    "orange": "items/fruits/orange/frame_00.png",
+    "apple": "items/fruits/apple/frame_00.png",
+    "melon": "items/fruits/melon/frame_00.png",
+    "galaxian": "items/fruits/galaxian/frame_00.png",
+    "bell": "items/fruits/bell/frame_00.png",
+    "key": "items/fruits/key/frame_00.png"
+  }
+}

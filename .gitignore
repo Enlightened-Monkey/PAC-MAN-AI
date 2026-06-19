@@ -6,15 +6,25 @@ data/processed/
 __pycache__/
 *.pyc
 .env
+.venv/
 
 # Jupyter
 .ipynb_checkpoints/
+notebooks/data/
+notebooks/models/
 
 # Model artifacts (checkpoints can be large — regenerate by running the notebooks)
 *.pkl
 *.h5
 *.pth
+*.pt
 *.zip
+
+# Generated debug/export data
+data/experiments/
+data/notebook_map_preview/
+data/notebook_map_preview_validation/
+data/real_screenshot_predictions/
 
 # OS
 .DS_Store

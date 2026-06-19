@@ -1,0 +1,6 @@
+{
+  "collectibles": {
+    "pellet": "tiles/collectibles/pellet.png",
+    "power_pellet": "tiles/collectibles/power_pellet.png"
+  }
+}

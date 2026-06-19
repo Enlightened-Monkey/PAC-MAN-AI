@@ -1,0 +1,6 @@
+{
+  "maze": {
+    "with_pellets": "backgrounds/maze/maze_with_pellets.png",
+    "empty": "backgrounds/maze/maze_empty.png"
+  }
+}

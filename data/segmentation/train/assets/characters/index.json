@@ -1,0 +1,46 @@
+{
+  "pacman": {
+    "state": "normal",
+    "directions": {
+      "right": "characters/pacman/normal/right/",
+      "left": "characters/pacman/normal/left/",
+      "up": "characters/pacman/normal/up/",
+      "down": "characters/pacman/normal/down/"
+    }
+  },
+  "ghosts": {
+    "normal": {
+      "blinky": {
+        "right": "characters/ghosts/blinky/normal/right/",
+        "left": "characters/ghosts/blinky/normal/left/",
+        "up": "characters/ghosts/blinky/normal/up/",
+        "down": "characters/ghosts/blinky/normal/down/"
+      },
+      "pinky": {
+        "right": "characters/ghosts/pinky/normal/right/",
+        "left": "characters/ghosts/pinky/normal/left/",
+        "up": "characters/ghosts/pinky/normal/up/",
+        "down": "characters/ghosts/pinky/normal/down/"
+      },
+      "inky": {
+        "right": "characters/ghosts/inky/normal/right/",
+        "left": "characters/ghosts/inky/normal/left/",
+        "up": "characters/ghosts/inky/normal/up/",
+        "down": "characters/ghosts/inky/normal/down/"
+      },
+      "clyde": {
+        "right": "characters/ghosts/clyde/normal/right/",
+        "left": "characters/ghosts/clyde/normal/left/",
+        "up": "characters/ghosts/clyde/normal/up/",
+        "down": "characters/ghosts/clyde/normal/down/"
+      }
+    },
+    "shared": {
+      "frightened": {
+        "blue": "characters/ghosts/shared/frightened/blue/",
+        "flash": "characters/ghosts/shared/frightened/flash/"
+      },
+      "eyes": "characters/ghosts/shared/eyes/"
+    }
+  }
+}

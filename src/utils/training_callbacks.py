@@ -46,6 +46,10 @@ class ConsoleCallback(BaseCallback):
         n_stack: int = 4,
         include_completion_plane: bool = False,
         include_frightened_plane: bool = False,
+        milestone_thresholds: tuple[float, ...] | None = None,
+        milestone_bonuses: tuple[float, ...] | None = None,
+        near_miss_penalty: float = -5.0,
+        late_endgame_fail_penalty: float = -1.0,
         ent_coef_floor: float = 0.01,
         ent_coef_plateau: float = 0.015,
         ent_coef_normal: float = 0.02,
@@ -65,6 +69,10 @@ class ConsoleCallback(BaseCallback):
         self.n_stack = int(n_stack)
         self.include_completion_plane = bool(include_completion_plane)
         self.include_frightened_plane = bool(include_frightened_plane)
+        self.milestone_thresholds = milestone_thresholds
+        self.milestone_bonuses = milestone_bonuses
+        self.near_miss_penalty = float(near_miss_penalty)
+        self.late_endgame_fail_penalty = float(late_endgame_fail_penalty)
         self.ent_coef_floor = float(ent_coef_floor)
         self.ent_coef_plateau = float(ent_coef_plateau)
         self.ent_coef_normal = float(ent_coef_normal)
@@ -243,7 +251,7 @@ class ConsoleCallback(BaseCallback):
         self, mean_pellet: float, level_clear_rate: float, step: int
     ) -> None:
         """Raise exploration when stuck at high pellet % with zero level clears."""
-        if not isinstance(self.model, PPO):
+        if not isinstance(self.model, (PPO, MaskablePPO)):
             return
 
         current = float(getattr(self.model, "ent_coef", self.ent_coef_floor))
@@ -284,10 +292,14 @@ class ConsoleCallback(BaseCallback):
             def _make_eval(s=seed):
                 env = PacmanGridEnv(
                     seed=s,
-                    max_steps=4000,
+                    max_steps=8000,
                     human_fair=True,
                     include_completion_plane=self.include_completion_plane,
                     include_frightened_plane=self.include_frightened_plane,
+                    milestone_thresholds=self.milestone_thresholds,
+                    milestone_bonuses=self.milestone_bonuses,
+                    near_miss_penalty=self.near_miss_penalty,
+                    late_endgame_fail_penalty=self.late_endgame_fail_penalty,
                 )
                 if self.use_action_masks:
                     env = wrap_with_action_masker(env)

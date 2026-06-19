@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack, VecMonitor
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 from src.environment.pacman_env import PacmanGridEnv
 from src.utils.obs_sync import include_flags_from_checkpoint, peek_checkpoint, validate_model_env
@@ -32,7 +32,6 @@ def build_vec(include_c: bool, include_f: bool, max_steps: int = 2500):
         )
 
     v = DummyVecEnv([make])
-    v = VecMonitor(v)
     return VecFrameStack(v, n_stack=N_STACK, channels_order="first")
 
 

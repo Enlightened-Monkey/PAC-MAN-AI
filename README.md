@@ -21,37 +21,49 @@ RL policy can in principle be driven by pixels.
 
 | # | Technique | Where | Course module |
 |---|-----------|-------|---------------|
-| 1 | **MaskablePPO** (Proximal Policy Optimization with action masking, sb3-contrib) on the custom CNN-channel environment | `notebooks/02_rl_training.ipynb`, `src/models/rl_agent.py` | Reinforcement Learning |
-| 2 | **CNN frame → state-vector regressor** (3 conv blocks + MLP head) bridging vision and the symbolic env | `notebooks/03_cnn_training.ipynb`, `src/models/cnn_detector.py` | Deep Learning / CV |
-| 3 | **Permutation importance + SHAP** attribution of the MaskablePPO critic (V(s)) | `notebooks/05_interpretability.ipynb` | Interpretability |
+| 1 | **MaskablePPO** (Proximal Policy Optimization with action masking, sb3-contrib) on the custom CNN-channel environment | `notebooks/rl_env/02_rl_training.ipynb`, `src/models/rl_agent.py` | Reinforcement Learning |
+| 2 | **U-Net screenshot segmentation pipeline** (synthetic map generation, training, mIoU evaluation, real-screen inference) | `notebooks/cnn_generated_screens/06_07_08.ipynb`, `src/models/segmentation_detector.py` | Deep Learning / CV |
+| 3 | **Permutation importance + SHAP** attribution of the MaskablePPO critic (V(s)) | `notebooks/rl_env/05_interpretability.ipynb` | Interpretability |
 
 ## 3. Repository Layout
 
 ```
 PAC-MAN-AI/
+├── data/
+│   ├── raw/
+│   │   └── sprites/                    # Source sprite sheets (manual/reference)
+│   ├── segmentation/                   # Canonical train/test segmentation datasets
+│   ├── labeled_maps/                   # Generated labeled maps (experimental snapshots)
+│   └── real_screenshot_predictions/    # Inference outputs on real screenshots
+├── docs/
+│   └── reference/
+│       └── Pac-Man Arcade SI i Mechanika.md
 ├── notebooks/
-│   ├── 01_env_testing.ipynb             # Custom env sanity checks & EDA
-│   ├── 02_rl_training.ipynb             # DQN / PPO on the state vector
-│   ├── 03_cnn_training.ipynb            # CNN frame → state vector
-│   ├── 04_pipeline_integration.ipynb    # Frame → CNN → RL agent (end-to-end)
-│   └── 05_interpretability.ipynb        # Permutation / SHAP on the MaskablePPO policy
+│   ├── rl_env/
+│   │   ├── 01_env_testing.ipynb         # Custom env sanity checks & EDA
+│   │   ├── 02_rl_training.ipynb         # DQN / PPO on the state vector
+│   │   ├── 04_pipeline_integration.ipynb # Frame → CNN → RL agent (end-to-end)
+│   │   └── 05_interpretability.ipynb    # Permutation / SHAP on the MaskablePPO policy
+│   └── cnn_generated_screens/
+│       └── 06_07_08.ipynb               # Segmentation / generated screenshot workflow
 ├── src/
 │   ├── environment/
 │   │   ├── game_logic.py                # Arcade-faithful game rules + ghost AI
 │   │   └── pacman_env.py                # gymnasium.Env wrapper
+│   ├── dataset/
+│   │   └── pacman_map_dataset.py        # Sprite extraction + synthetic map generation
 │   ├── models/
 │   │   ├── cnn_detector.py              # CNN architecture + inference
-│   │   └── rl_agent.py                  # DQN / PPO wrapper (SB3)
+│   │   ├── rl_agent.py                  # DQN / PPO wrapper (SB3)
+│   │   └── segmentation_detector.py     # Segmentation training + layered inference
 │   └── utils/
 │       └── mlflow_logger.py             # MLflow context-manager helper
 ├── models/                              # Trained checkpoints (git-ignored)
-├── tests/
-│   └── test_environment.py              # pytest unit tests (30 tests)
+├── tests/                               # pytest unit tests
 ├── reports/                             # Presentation PDF, EDA & training figures
 ├── mlruns/                              # MLflow tracking data (git-ignored)
 ├── requirements.txt
 ├── group_project_guidelines.pdf
-├── Pac-Man Arcade SI i Mechanika.pdf    # Reference: arcade mechanics
 └── README.md
 ```
 
@@ -59,14 +71,14 @@ PAC-MAN-AI/
 
 | Required section | Implemented in |
 |------------------|----------------|
-| **Introduction** — problem & motivation | this README §1 + `notebooks/01_env_testing.ipynb` |
-| **Data / Environment loading & validation** | `notebooks/01_env_testing.ipynb` |
-| **EDA** — observation space, action space, reward distribution | `notebooks/01_env_testing.ipynb` |
-| **Feature engineering** — state-vector design, frame preprocessing | `src/environment/pacman_env.py`, `notebooks/03_cnn_training.ipynb` |
-| **Modeling** — DQN, PPO, CNN regressor (≥3 techniques) | `notebooks/02_rl_training.ipynb` + `notebooks/03_cnn_training.ipynb` |
-| **Evaluation** — episode return curves, rolling averages | `notebooks/02_rl_training.ipynb` |
-| **Interpretability** — permutation importance + SHAP | `notebooks/05_interpretability.ipynb` |
-| **Conclusions** | this README §8 + `notebooks/04_pipeline_integration.ipynb` |
+| **Introduction** — problem & motivation | this README §1 + `notebooks/rl_env/01_env_testing.ipynb` |
+| **Data / Environment loading & validation** | `notebooks/rl_env/01_env_testing.ipynb` |
+| **EDA** — observation space, action space, reward distribution | `notebooks/rl_env/01_env_testing.ipynb` |
+| **Feature engineering** — state-vector design, frame preprocessing | `src/environment/pacman_env.py`, `notebooks/cnn_generated_screens/06_07_08.ipynb` |
+| **Modeling** — DQN, PPO, segmentation U-Net (≥3 techniques) | `notebooks/rl_env/02_rl_training.ipynb` + `notebooks/cnn_generated_screens/06_07_08.ipynb` |
+| **Evaluation** — episode return curves, rolling averages | `notebooks/rl_env/02_rl_training.ipynb` |
+| **Interpretability** — permutation importance + SHAP | `notebooks/rl_env/05_interpretability.ipynb` |
+| **Conclusions** | this README §8 + `notebooks/rl_env/04_pipeline_integration.ipynb` |
 
 ---
 
@@ -88,15 +100,90 @@ environment is implemented entirely in `src/environment/`.
 pytest tests/ -v
 ```
 
-**RL training** — open `notebooks/02_rl_training.ipynb` and run all cells.
+**RL training** — open `notebooks/rl_env/02_rl_training.ipynb` and run all cells.
 Training, MLflow logging and evaluation are produced in-notebook. The
 trained checkpoint is saved to `models/ppo_pacman.zip`.
 
-**CNN frame → state-vector** — `notebooks/03_cnn_training.ipynb`.
+**Segmentation training/evaluation/inference** — `notebooks/cnn_generated_screens/06_07_08.ipynb`.
 
-**End-to-end pipeline** — `notebooks/04_pipeline_integration.ipynb`.
+**Screenshot segmentation (labels + positions + class/group layers)**
+```bash
+# 1) Train on generated images/masks
+python -m src.models.segmentation_detector train \
+  --dataset-dir data/pacman_dataset \
+  --output models/segmentation_unet.pt \
+  --epochs 20 \
+  --batch-size 16 \
+  --device cpu
 
-**Interpretability** — `notebooks/05_interpretability.ipynb` loads
+# 2) Run on a single screenshot
+python -m src.models.segmentation_detector infer \
+  --model models/segmentation_unet.pt \
+  --image data/example_screenshot.png \
+  --output-dir data/screenshot_predictions \
+  --detect-hud
+
+# 3) Arcade-layout screenshot (auto maze crop + HUD parse)
+python -m src.models.segmentation_detector infer-arcade \
+  --model models/segmentation_unet.pt \
+  --image data/example_arcade_screen.png \
+  --output-dir data/screenshot_predictions_arcade \
+  --parse-hud
+```
+
+The inference command writes:
+- `prediction.json` with per-object labels, bounding boxes and centroids,
+- `pred_mask.png` (class-id segmentation mask),
+- class layers under `layers/classes/` (e.g. `blinky.png`, `fruit.png`),
+- group layers under `layers/groups/` (e.g. `ghosts.png`, `collectibles.png`).
+
+The `infer-arcade` command additionally writes:
+- `prediction_arcade.json` with boxes mapped to original screenshot coordinates,
+- `pred_mask_full.png` projected back to the original screenshot size,
+- parsed HUD fields (`score_text`, `high_score_text`, lives icon detections).
+
+**Synthetic labelled frames / sprite extraction**
+```bash
+python -m src.dataset.pacman_map_dataset extract-assets \
+  --output-dir data/pacman_assets
+
+python -m src.dataset.pacman_map_dataset audit-assets \
+  --output-dir data/pacman_asset_audit
+
+python -m src.dataset.pacman_map_dataset generate \
+  --output-dir data/pacman_dataset \
+  --samples 256 \
+  --seed 42 \
+  --max-random-steps 300
+```
+
+The generator uses the arcade sprite sheet stored in
+`data/raw/sprites/Arcade - Pac-Man - Miscellaneous - General Sprites.png`,
+extracts a working asset catalog, renders 224x248 frames from `GameState`, and
+saves three aligned outputs per sample: RGB frame, class mask, and JSON
+annotations with bounding boxes and tile labels.
+
+Exported assets are now grouped by type and animation folders, for example:
+
+- `backgrounds/maze/maze_empty.png`
+- `tiles/collectibles/pellet.png`
+- `characters/pacman/normal/right/frame_00.png`
+- `characters/ghosts/blinky/normal/right/frame_00.png`
+- `characters/ghosts/pinky/normal/right/frame_00.png`
+- `characters/ghosts/inky/normal/right/frame_00.png`
+- `characters/ghosts/clyde/normal/right/frame_00.png`
+- `characters/ghosts/shared/frightened/blue/frame_00.png`
+- `items/fruits/cherry/frame_00.png`
+
+Each top-level section (`backgrounds`, `tiles`, `characters`, `items`) contains
+an `index.json` file with pointers to all subfolders/files for easy loading.
+
+Ghost colors are mapped from dedicated sprite rows (red/pink/cyan/orange), so
+Blinky, Pinky, Inky and Clyde no longer share the same source strip.
+
+**End-to-end pipeline** — `notebooks/rl_env/04_pipeline_integration.ipynb`.
+
+**Interpretability** — `notebooks/rl_env/05_interpretability.ipynb` loads
 `models/ppo_pacman.zip` and produces permutation-importance and
 SHAP GradientExplainer figures for the MaskablePPO critic.
 
@@ -154,7 +241,7 @@ Ghost behaviour reproduces the *Pac-Man Dossier* algorithms:
 - Hyperparameters and per-episode metrics are logged to **MLflow** (see
   `src/utils/mlflow_logger.py`).
 - Trained checkpoints are saved under `models/` (git-ignored due to size;
-  re-run `notebooks/02_rl_training.ipynb` to regenerate).
+  re-run `notebooks/rl_env/02_rl_training.ipynb` to regenerate).
 - `requirements.txt` pins all direct dependencies; `mlruns/`, `__pycache__/`,
   `.ipynb_checkpoints/`, `*.pth`, `*.zip` and large binary artefacts are
   git-ignored.

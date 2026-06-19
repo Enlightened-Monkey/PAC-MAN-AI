@@ -294,6 +294,9 @@ class PacmanGridEnv(gym.Env):
         wasted_power_penalty: float = -1.5,
         near_miss_penalty: float = -5.0,
         near_miss_threshold: float = 0.90,
+        endgame_progress_threshold: float = 0.75,
+        endgame_progress_bonus: float = 60.0,
+        late_endgame_fail_penalty: float = -1.0,
         milestone_thresholds: tuple[float, ...] | None = None,
         milestone_bonuses: tuple[float, ...] | None = None,
         enable_milestones: bool = True,
@@ -320,6 +323,9 @@ class PacmanGridEnv(gym.Env):
         self._wasted_power_penalty = float(wasted_power_penalty)
         self._near_miss_penalty = float(near_miss_penalty)
         self._near_miss_threshold = float(near_miss_threshold)
+        self._endgame_progress_threshold = float(endgame_progress_threshold)
+        self._endgame_progress_bonus = float(endgame_progress_bonus)
+        self._late_endgame_fail_penalty = float(late_endgame_fail_penalty)
         if human_fair and enable_milestones:
             self._milestone_thresholds = tuple(
                 milestone_thresholds or _DEFAULT_MILESTONE_THRESHOLDS
@@ -424,7 +430,9 @@ class PacmanGridEnv(gym.Env):
         prev_score = self._state.score
         prev_pos = self._state.pacman_pos
         completion_before_death = self._pellet_completion()
+        completion_before = completion_before_death
         _, done = self._state.step(int(action))
+        completion_after = self._pellet_completion()
         deaths_now = lives_before - self._state.lives
         if deaths_now > 0:
             self._episode_deaths += deaths_now
@@ -442,6 +450,12 @@ class PacmanGridEnv(gym.Env):
             reward += self._death_penalty * deaths_now
             if completion_before_death >= self._endgame_death_threshold:
                 reward += self._endgame_death_surcharge * deaths_now
+
+        # Dense endgame curriculum: once the agent reaches late-map states,
+        # explicitly reward every tiny positive completion delta.
+        if completion_before >= self._endgame_progress_threshold:
+            completion_delta = max(0.0, completion_after - completion_before)
+            reward += completion_delta * self._endgame_progress_bonus
 
         reward = self._apply_milestone_rewards(reward)
 
@@ -461,6 +475,8 @@ class PacmanGridEnv(gym.Env):
             self._prev_potential = phi
 
         truncated = (not done) and self._state.step_count >= self._max_steps
+        if done and self._level_clears == 0 and completion_after >= self._endgame_progress_threshold:
+            reward += self._late_endgame_fail_penalty
         if done and self._level_clears == 0 and self._pellet_completion() >= self._near_miss_threshold:
             reward += self._near_miss_penalty
         self._max_level_reached = max(self._max_level_reached, self._state.level)

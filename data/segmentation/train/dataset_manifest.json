@@ -1,0 +1,25 @@
+{
+  "sample_count": 2000,
+  "frame_size": [
+    224,
+    248
+  ],
+  "tile_size": 8,
+  "class_to_id": {
+    "empty": 0,
+    "wall": 1,
+    "pellet": 2,
+    "power_pellet": 3,
+    "ghost_door": 4,
+    "ghost_house": 5,
+    "pacman": 6,
+    "blinky": 7,
+    "pinky": 8,
+    "inky": 9,
+    "clyde": 10,
+    "frightened_ghost": 11,
+    "ghost_eyes": 12,
+    "fruit": 13
+  },
+  "general_sheet_path": "Arcade - Pac-Man - Miscellaneous - General Sprites.png"
+}
