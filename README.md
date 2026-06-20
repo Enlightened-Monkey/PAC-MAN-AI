@@ -33,19 +33,34 @@ PAC-MAN-AI/
 │   ├── raw/
 │   │   └── sprites/                    # Source sprite sheets (manual/reference)
 │   ├── segmentation/                   # Canonical train/test segmentation datasets
-│   ├── labeled_maps/                   # Generated labeled maps (experimental snapshots)
-│   └── real_screenshot_predictions/    # Inference outputs on real screenshots
+│   ├── labeled_maps/                   # Generated labeled maps with manifest
+│   └── pellet_probe/                   # Pellet-detection debug captures
 ├── docs/
+│   ├── PROJECT_STRUCTURE.md            # Conventions & hygiene rules
 │   └── reference/
 │       └── Pac-Man Arcade SI i Mechanika.md
 ├── notebooks/
 │   ├── rl_env/
 │   │   ├── 01_env_testing.ipynb         # Custom env sanity checks & EDA
-│   │   ├── 02_rl_training.ipynb         # DQN / PPO on the state vector
+│   │   ├── 02_rl_training.ipynb         # MaskablePPO training on the state vector
 │   │   ├── 04_pipeline_integration.ipynb # Frame → CNN → RL agent (end-to-end)
 │   │   └── 05_interpretability.ipynb    # Permutation / SHAP on the MaskablePPO policy
 │   └── cnn_generated_screens/
-│       └── 06_07_08.ipynb               # Segmentation / generated screenshot workflow
+│       ├── 01_inicjalizacja_i_labelowanie.ipynb  # Data init & labelling
+│       ├── 02_uczenie_modelu.ipynb               # Model training
+│       ├── 03_integracja_mlops.ipynb             # MLOps integration
+│       ├── 04_statystyki_i_wizualizacja.ipynb    # Stats & visualisation
+│       └── 06_07_08.ipynb               # Segmentation end-to-end workflow
+├── scripts/
+│   ├── train_ppo_fair.py               # Main PPO training script (GPU/CPU)
+│   ├── diagnose_plateau.py             # Post-training behaviour diagnosis
+│   ├── validate_training_setup.py      # Model/env shape compatibility check
+│   ├── analyze_behavior.py             # Agent behaviour analysis
+│   ├── audit_level_clear.py            # Level-clear audit
+│   ├── plot_training.py                # Generate training curve plots
+│   ├── record_episode.py              # Record demo episode GIF/video
+│   ├── pacman_screen_agent.py         # Live screen-capture agent
+│   └── archive_data_snapshots.sh      # Archive transient data outputs
 ├── src/
 │   ├── environment/
 │   │   ├── game_logic.py                # Arcade-faithful game rules + ghost AI
@@ -57,11 +72,21 @@ PAC-MAN-AI/
 │   │   ├── rl_agent.py                  # DQN / PPO wrapper (SB3)
 │   │   └── segmentation_detector.py     # Segmentation training + layered inference
 │   └── utils/
-│       └── mlflow_logger.py             # MLflow context-manager helper
+│       ├── mlflow_logger.py             # MLflow context-manager helper
+│       ├── device_helper.py             # CUDA/CPU device selection
+│       ├── lr_schedule.py               # Learning-rate schedule utilities
+│       ├── maskable_env.py              # Action-masking env wrapper
+│       ├── obs_sync.py                  # Observation synchronisation helpers
+│       ├── pacman_renderer.py           # Frame rendering for CNN pipeline
+│       ├── ppo_cnn.py                   # CNN feature extractor for PPO
+│       └── training_callbacks.py        # SB3 training callbacks
 ├── models/                              # Trained checkpoints (git-ignored)
 ├── tests/                               # pytest unit tests
-├── reports/                             # Presentation PDF, EDA & training figures
+├── logs/                                # Training logs & TensorBoard events
+├── reports/                             # EDA figures, learning curves, diagnostics
 ├── mlruns/                              # MLflow tracking data (git-ignored)
+├── pacman_screen_agent.py               # Top-level launcher for screen agent
+├── TRAINING_GUIDE.md                    # GPU-optimized training quick-start
 ├── requirements.txt
 ├── group_project_guidelines.pdf
 └── README.md

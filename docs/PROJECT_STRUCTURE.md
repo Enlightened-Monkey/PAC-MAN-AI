@@ -6,9 +6,11 @@ This document defines the target structure for keeping the repository maintainab
 
 - `src/`: application and ML code.
 - `tests/`: automated tests for `src/` modules.
+- `scripts/`: standalone training, diagnostic, and utility scripts.
 - `notebooks/`: exploratory analysis, training workflows, and integration notebooks.
 - `data/`: datasets, source assets, and generated experiment outputs.
 - `models/`: trained checkpoints and exported model weights.
+- `logs/`: training run logs and TensorBoard event files.
 - `reports/`: plots, figures, and final report artifacts.
 - `docs/`: reference and project documentation.
 
