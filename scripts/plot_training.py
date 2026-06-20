@@ -219,18 +219,19 @@ def record_demo_gif(checkpoint: Path, n_episodes: int = 1, max_steps: int = 800)
     from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
     from src.environment.pacman_env import PacmanGridEnv
     from src.utils.maskable_env import load_trainable_model, predict_action, wrap_with_action_masker
-    from src.utils.obs_sync import include_flags_from_checkpoint, validate_model_env
+    from src.utils.obs_sync import obs_channel_config_from_checkpoint, validate_model_env
     from src.utils.pacman_renderer import render_state_rgb, render_hud_text
 
     if not checkpoint.exists():
         print(f"No checkpoint at {checkpoint}")
         return
 
-    inc_c, inc_f = include_flags_from_checkpoint(str(checkpoint), n_stack=4)
+    inc_c, inc_f, inc_d = obs_channel_config_from_checkpoint(str(checkpoint), n_stack=4)
 
     def _probe():
         e = PacmanGridEnv(seed=0, max_steps=4000, human_fair=True,
-            include_completion_plane=inc_c, include_frightened_plane=inc_f)
+            include_completion_plane=inc_c, include_frightened_plane=inc_f,
+            include_derived_planes=inc_d)
         return Monitor(wrap_with_action_masker(e))
 
     probe = VecFrameStack(DummyVecEnv([_probe]), n_stack=4, channels_order="first")
@@ -248,6 +249,7 @@ def record_demo_gif(checkpoint: Path, n_episodes: int = 1, max_steps: int = 800)
         raw_env = PacmanGridEnv(
             seed=ep, human_fair=True, render_mode="rgb_array",
             include_completion_plane=inc_c, include_frightened_plane=inc_f,
+            include_derived_planes=inc_d,
         )
         raw_env = wrap_with_action_masker(raw_env)
         venv = VecFrameStack(

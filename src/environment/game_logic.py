@@ -1011,17 +1011,35 @@ class GameState:
         ------
         [0]       pacman_row / ROWS
         [1]       pacman_col / COLS
-        [2..3]    mode flags (2 floats): frightened, flashing
+        [2]       frightened_timer (exact, normalised by max frightened duration)
+        [3]       frightened_flashing flag
         [4..11]   ghost (row/ROWS, col/COLS) for each of the 4 ghosts
         [12..15]  ghost frightened-active flag (1.0 if frightened & not eaten)
         [16]      lives / 3
         [17]      remaining_pellets / total_pellets
         [18..]    flattened maze (each cell / max tile code)
+        [18+ROWS*COLS]     fruit active flag
+        [18+ROWS*COLS+1]   fruit spawn row (if active)
+        [18+ROWS*COLS+2]   fruit spawn col (if active)
+        --- extended signals ---
+        [+0]  wave_timer normalised by longest wave duration in schedule
+        [+1]  mode flag (0.0 = scatter, 1.0 = chase)
+        [+2]  wave_index / (len(schedule) - 1)
+        [+3..+6]   per-ghost in_house flag × 4
+        [+7..+10]  per-ghost eaten (eyes) flag × 4
+        [+11..+14] per-ghost direction / 3 × 4
+        [+15] ticks_since_pellet / GLOBAL_RELEASE_TIMEOUT
+        [+16] ghost_combo / 3
+        [+17] fruit_timer / FRUIT_TIMEOUT_MAX
+        [+18] fruit_spawned_count / 2
+        [+19] level / 10 (capped at 1.0)
+        [+20] Cruise Elroy phase / 2  (0 = none, 0.5 = elroy1, 1.0 = elroy2)
         """
+        max_frightened = max(self.get_frightened_duration(self.level), 1)
         obs: list[float] = [
             self.pacman_pos[0] / ROWS,
             self.pacman_pos[1] / COLS,
-            float(self.frightened_timer > 0),
+            min(self.frightened_timer / max_frightened, 1.0),
             float(self.frightened_flashing),
         ]
         for g in self.ghosts:
@@ -1037,4 +1055,44 @@ class GameState:
         obs.append(float(self.fruit_active))
         obs.append(FRUIT_SPAWN_POS[0] / ROWS if self.fruit_active else 0.0)
         obs.append(FRUIT_SPAWN_POS[1] / COLS if self.fruit_active else 0.0)
+
+        # --- extended signals (new) ---
+        # Wave timer: how many ticks remain in the current scatter/chase phase
+        max_wave = max((dur for _, dur in self._wave_schedule if dur < 10**8), default=1)
+        obs.append(min(self.wave_timer / max_wave, 1.0))
+        # Current mode: 0.0 = scatter, 1.0 = chase
+        obs.append(1.0 if self.mode == "chase" else 0.0)
+        # Wave phase index (how far through the schedule we are)
+        obs.append(self.wave_index / max(len(self._wave_schedule) - 1, 1))
+        # Per-ghost in_house flag
+        for g in self.ghosts:
+            obs.append(float(g.in_house))
+        # Per-ghost eaten (currently returning as eyes)
+        for g in self.ghosts:
+            obs.append(float(g.eaten))
+        # Per-ghost direction (0=UP, 1=DOWN, 2=LEFT, 3=RIGHT) normalised
+        for g in self.ghosts:
+            obs.append(g.direction / 3.0)
+        # Release pressure: how long since last pellet eaten (ghost-house timeout)
+        obs.append(min(self.ticks_since_pellet / max(GLOBAL_RELEASE_TIMEOUT, 1), 1.0))
+        # Ghost eating combo (0..3 → 200/400/800/1600)
+        obs.append(self.ghost_combo / 3.0)
+        # Fruit countdown
+        obs.append(min(self.fruit_timer / max(FRUIT_TIMEOUT_MAX, 1), 1.0))
+        # Fruit appearances remaining (0 = both used, 0.5 = 1 left, 1.0 = both left)
+        obs.append((2 - self.fruit_spawned_count) / 2.0)
+        # Level (capped at 10 for normalisation; higher levels saturate at 1.0)
+        obs.append(min(self.level / 10.0, 1.0))
+        # Cruise Elroy phase for Blinky
+        elroy_remaining = int(np.sum(np.isin(self.maze, [TILE_PELLET, TILE_POWER])))
+        threshold = self.elroy_pellets_threshold or ELROY1_PELLETS_REMAINING
+        elroy2_thr = min(threshold // 2, ELROY2_PELLETS_REMAINING)
+        if elroy_remaining <= elroy2_thr:
+            elroy_phase = 2
+        elif elroy_remaining <= threshold:
+            elroy_phase = 1
+        else:
+            elroy_phase = 0
+        obs.append(elroy_phase / 2.0)
+
         return np.array(obs, dtype=np.float32)

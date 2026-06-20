@@ -14,12 +14,16 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 from src.environment.pacman_env import PacmanGridEnv
-from src.utils.obs_sync import include_flags_from_checkpoint, peek_checkpoint, validate_model_env
+from src.utils.obs_sync import (
+    obs_channel_config_from_checkpoint,
+    peek_checkpoint,
+    validate_model_env,
+)
 
 N_STACK = 4
 
 
-def build_vec(include_c: bool, include_f: bool, max_steps: int = 2500):
+def build_vec(include_c: bool, include_f: bool, include_d: bool, max_steps: int = 2500):
     def make():
         return Monitor(
             PacmanGridEnv(
@@ -28,6 +32,7 @@ def build_vec(include_c: bool, include_f: bool, max_steps: int = 2500):
                 human_fair=True,
                 include_completion_plane=include_c,
                 include_frightened_plane=include_f,
+                include_derived_planes=include_d,
             )
         )
 
@@ -41,10 +46,10 @@ def main() -> None:
         print(f"No checkpoint: {ckpt}")
         sys.exit(1)
 
-    inc_c, inc_f = include_flags_from_checkpoint(str(ckpt), N_STACK)
-    print(f"Checkpoint expects: completion={inc_c}, frightened={inc_f}")
+    inc_c, inc_f, inc_d = obs_channel_config_from_checkpoint(str(ckpt), N_STACK)
+    print(f"Checkpoint expects: completion={inc_c}, frightened={inc_f}, derived={inc_d}")
 
-    vec = build_vec(inc_c, inc_f)
+    vec = build_vec(inc_c, inc_f, inc_d)
     model = peek_checkpoint(str(ckpt.with_suffix("")), device="cpu")
     try:
         validate_model_env(model, vec, context="validate_training_setup")

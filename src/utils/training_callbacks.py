@@ -46,6 +46,7 @@ class ConsoleCallback(BaseCallback):
         n_stack: int = 4,
         include_completion_plane: bool = False,
         include_frightened_plane: bool = False,
+        include_derived_planes: bool = False,
         milestone_thresholds: tuple[float, ...] | None = None,
         milestone_bonuses: tuple[float, ...] | None = None,
         near_miss_penalty: float = -5.0,
@@ -69,6 +70,7 @@ class ConsoleCallback(BaseCallback):
         self.n_stack = int(n_stack)
         self.include_completion_plane = bool(include_completion_plane)
         self.include_frightened_plane = bool(include_frightened_plane)
+        self.include_derived_planes = bool(include_derived_planes)
         self.milestone_thresholds = milestone_thresholds
         self.milestone_bonuses = milestone_bonuses
         self.near_miss_penalty = float(near_miss_penalty)
@@ -296,6 +298,7 @@ class ConsoleCallback(BaseCallback):
                     human_fair=True,
                     include_completion_plane=self.include_completion_plane,
                     include_frightened_plane=self.include_frightened_plane,
+                    include_derived_planes=self.include_derived_planes,
                     milestone_thresholds=self.milestone_thresholds,
                     milestone_bonuses=self.milestone_bonuses,
                     near_miss_penalty=self.near_miss_penalty,

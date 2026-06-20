@@ -25,10 +25,11 @@ from src.environment.game_logic import (
     DIRECTION_DELTAS,
 )
 
-# Observation vector length = 4 (pacman + frightened/flashing flags) + 8 (ghost positions)
-#                             + 4 (frightened flags) + 2 (lives, pellets)
-#                             + ROWS*COLS (maze) + 3 (fruit: active, row, col)
-_OBS_SIZE = 4 + 8 + 4 + 2 + ROWS * COLS + 3
+# Observation vector length = 4 (pacman + frightened normalised + flashing flag)
+#                             + 8 (ghost positions) + 4 (ghost frightened flags)
+#                             + 2 (lives, pellets) + ROWS*COLS (maze) + 3 (fruit)
+#                             + 21 extended signals (wave, mode, ghost states, timers, level, elroy)
+_OBS_SIZE = 4 + 8 + 4 + 2 + ROWS * COLS + 3 + 21
 
 
 class PacmanEnv(gym.Env):
@@ -235,8 +236,13 @@ from src.environment.game_logic import (
 )
 
 # Channel layout (C, H=ROWS, W=COLS)
+# Base channels are strictly observable from the board/HUD.
 _GRID_BASE_CHANNELS = 9  # walls, pellets, power, pacman, ghosts×2, fruit, lives_hud, level_plane
-# Optional ch9: global pellet_completion plane (enabled via include_completion_plane=True)
+# Optional channels:
+#   +1 completion plane (global pellet ratio)
+#   +1 frightened-timer estimate plane (normalised)
+#   +6 engineered planes derived only from visible board state
+_GRID_DERIVED_CHANNELS = 6
 _GRID_CHANNELS = _GRID_BASE_CHANNELS  # default export for tests without completion plane
 
 # Milestones only in deep endgame — avoids "farm 90% and die" local optimum.
@@ -252,10 +258,13 @@ class PacmanGridEnv(gym.Env):
     """
     Pac-Man environment optimised for CNN policies (PPO / MaskablePPO).
 
-    Observation: float32 tensor (8, ROWS, COLS) in [0, 1]
+    Observation: float32 tensor (C, ROWS, COLS) in [0, 1]
         ch0 walls, ch1 pellets, ch2 power, ch3 pacman,
         ch4 ghosts (not frightened, not eaten), ch5 ghosts frightened,
-        ch6 fruit (when active), ch7 lives HUD markers
+        ch6 fruit (when active), ch7 lives HUD markers, ch8 level plane
+    Optional legal feature planes (derived from visible state only):
+        danger distance, frightened-opportunity distance,
+        pellet distance, power-pellet distance, junction map, dead-end map.
     Action space: Discrete(4)  (UP / DOWN / LEFT / RIGHT)
     Action mask: optional helper for debugging; fair training should not use masks.
 
@@ -305,6 +314,7 @@ class PacmanGridEnv(gym.Env):
         human_fair: bool = True,
         include_completion_plane: bool = False,
         include_frightened_plane: bool = False,
+        include_derived_planes: bool = False,
         easy_endgame: bool = False,
         elroy_pellets_threshold: int | None = None,
         render_mode: str | None = "rgb_array",
@@ -343,7 +353,12 @@ class PacmanGridEnv(gym.Env):
         self._human_fair = bool(human_fair)
         self._include_completion_plane = bool(include_completion_plane)
         self._include_frightened_plane = bool(include_frightened_plane)
-        extra = int(self._include_completion_plane) + int(self._include_frightened_plane)
+        self._include_derived_planes = bool(include_derived_planes)
+        extra = (
+            int(self._include_completion_plane)
+            + int(self._include_frightened_plane)
+            + int(self._include_derived_planes) * _GRID_DERIVED_CHANNELS
+        )
         self._n_channels = _GRID_BASE_CHANNELS + extra
 
         elroy = elroy_pellets_threshold
@@ -369,6 +384,9 @@ class PacmanGridEnv(gym.Env):
         self._walk_mask = np.isin(
             self._state.maze, [0, TILE_PELLET, TILE_POWER]  # 0 = TILE_EMPTY
         )
+        self._neighbor_count_map = self._build_neighbor_count_map()
+        self._junction_map = (self._neighbor_count_map >= 3).astype(np.float32)
+        self._dead_end_map = (self._neighbor_count_map <= 1).astype(np.float32)
         self._prev_potential: float = 0.0
 
     # ------------------------------------------------------------------
@@ -548,7 +566,76 @@ class PacmanGridEnv(gym.Env):
         if self._include_frightened_plane:
             max_ft = max(self._state.get_frightened_duration(self._state.level), 1)
             obs[ch, :, :] = min(self._state.frightened_timer / max_ft, 1.0)
+            ch += 1
+        if self._include_derived_planes:
+            active_ghost_src = np.argwhere(obs[4] > 0.5)
+            frightened_ghost_src = np.argwhere(obs[5] > 0.5)
+            pellet_src = np.argwhere((m == TILE_PELLET) | (m == TILE_POWER))
+            power_src = np.argwhere(m == TILE_POWER)
+
+            obs[ch, :, :] = self._distance_plane(active_ghost_src)      # danger
+            obs[ch + 1, :, :] = self._distance_plane(frightened_ghost_src)  # edible opportunity
+            obs[ch + 2, :, :] = self._distance_plane(pellet_src)        # nearest collectible
+            obs[ch + 3, :, :] = self._distance_plane(power_src)          # nearest power pellet
+            obs[ch + 4, :, :] = self._junction_map
+            obs[ch + 5, :, :] = self._dead_end_map
         return obs
+
+    def _iter_walk_neighbors(self, r: int, c: int):
+        for dr, dc in DIRECTION_DELTAS.values():
+            nr, nc = r + dr, c + dc
+            # Tunnel wrap on tunnel row.
+            if nr == 14 and nc < 0:
+                nc = COLS - 1
+            elif nr == 14 and nc >= COLS:
+                nc = 0
+            if 0 <= nr < ROWS and 0 <= nc < COLS and self._walk_mask[nr, nc]:
+                yield nr, nc
+
+    def _build_neighbor_count_map(self) -> np.ndarray:
+        out = np.zeros((ROWS, COLS), dtype=np.uint8)
+        for r in range(ROWS):
+            for c in range(COLS):
+                if not self._walk_mask[r, c]:
+                    continue
+                cnt = 0
+                for _nr, _nc in self._iter_walk_neighbors(r, c):
+                    cnt += 1
+                out[r, c] = cnt
+        return out
+
+    def _distance_plane(self, sources: np.ndarray) -> np.ndarray:
+        """BFS distance-to-source map converted to [0,1] closeness.
+
+        This is legal feature engineering: the plane is computed purely from
+        visible board entities in the current observation.
+        """
+        if sources.size == 0:
+            return np.zeros((ROWS, COLS), dtype=np.float32)
+
+        dist = np.full((ROWS, COLS), -1, dtype=np.int16)
+        q: deque[tuple[int, int]] = deque()
+        for rr, cc in sources.tolist():
+            r = int(rr)
+            c = int(cc)
+            if 0 <= r < ROWS and 0 <= c < COLS and self._walk_mask[r, c] and dist[r, c] < 0:
+                dist[r, c] = 0
+                q.append((r, c))
+
+        while q:
+            r, c = q.popleft()
+            nd = int(dist[r, c]) + 1
+            for nr, nc in self._iter_walk_neighbors(r, c):
+                if dist[nr, nc] >= 0:
+                    continue
+                dist[nr, nc] = nd
+                q.append((nr, nc))
+
+        out = np.zeros((ROWS, COLS), dtype=np.float32)
+        valid = dist >= 0
+        if np.any(valid):
+            out[valid] = 1.0 / (1.0 + dist[valid].astype(np.float32))
+        return out
 
     def _info(self) -> dict:
         st = self._state

@@ -14,9 +14,122 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset, random_split
 
 from src.dataset.pacman_map_dataset import CLASS_TO_ID
+from src.environment.game_logic import DEFAULT_MAZE_ARR, TILE_PELLET, TILE_POWER
 
 
 ID_TO_CLASS = {idx: name for name, idx in CLASS_TO_ID.items()}
+
+# ---------------------------------------------------------------------------
+# Stała maska slotów pellet / power_pellet wyprowadzona z arcade'owej mapy
+# ---------------------------------------------------------------------------
+# Wymiary renderowanego playfieldu (224×248 px, 28 kolumn × 31 wierszy)
+_RENDER_W = 224
+_RENDER_H = 248
+_MAZE_ROWS = DEFAULT_MAZE_ARR.shape[0]   # 31
+_MAZE_COLS = DEFAULT_MAZE_ARR.shape[1]   # 28
+_TILE_W = _RENDER_W / _MAZE_COLS         # 8.0 px
+_TILE_H = _RENDER_H / _MAZE_ROWS         # ~8.0 px
+
+
+def _slot_center(row: int, col: int) -> tuple[int, int]:
+    """Pikselowy środek kafelka (row, col) w 224×248 frame."""
+    cx = int((col + 0.5) * _TILE_W)
+    cy = int((row + 0.5) * _TILE_H)
+    return cx, cy
+
+
+# Precompute raz przy imporcie — lista (row, col, cx, cy) dla każdego slotu
+_PELLET_SLOTS: list[tuple[int, int, int, int]] = []
+_POWER_SLOTS: list[tuple[int, int, int, int]] = []
+for _r in range(_MAZE_ROWS):
+    for _c in range(_MAZE_COLS):
+        _tile = int(DEFAULT_MAZE_ARR[_r, _c])
+        if _tile == TILE_PELLET:
+            _cx, _cy = _slot_center(_r, _c)
+            _PELLET_SLOTS.append((_r, _c, _cx, _cy))
+        elif _tile == TILE_POWER:
+            _cx, _cy = _slot_center(_r, _c)
+            _POWER_SLOTS.append((_r, _c, _cx, _cy))
+
+
+def build_pellet_slot_mask(
+    img_shape: tuple[int, int] = (_RENDER_H, _RENDER_W),
+    include_power: bool = True,
+) -> np.ndarray:
+    """Zwraca uint8 maskę (H×W) z 255 w miejscach możliwych pelletów.
+
+    Przydatna do nakładania na frame i do weryfikacji mapowania siatki.
+    *img_shape* pozwala przeskalować maskę do innego rozmiaru niż 248×224.
+    """
+    mask = np.zeros(img_shape[:2], dtype=np.uint8)
+    h, w = img_shape[:2]
+    scale_x = w / _RENDER_W
+    scale_y = h / _RENDER_H
+    for _r, _c, cx, cy in _PELLET_SLOTS:
+        px, py = int(cx * scale_x), int(cy * scale_y)
+        if 0 <= px < w and 0 <= py < h:
+            mask[py, px] = 255
+    if include_power:
+        for _r, _c, cx, cy in _POWER_SLOTS:
+            px, py = int(cx * scale_x), int(cy * scale_y)
+            if 0 <= px < w and 0 <= py < h:
+                mask[py, px] = 255
+    return mask
+
+
+def detect_pellets_grid(
+    image_rgb: np.ndarray,
+    brightness_threshold: int = 160,
+    sample_radius: int = 2,
+) -> list[dict[str, Any]]:
+    """Wykrywa pellety bez sieci neuronowej — przez próbkowanie jasności.
+
+    Dla każdego stałego slotu z mapy arcade sprawdza, czy w okolicach środka
+    kafelka w podanym *image_rgb* (224×248) jest wystarczająco jasny piksel
+    (pellets i power_pellets to jasne punkty na ciemnym tle).
+
+    Zwraca listę instances w tym samym formacie co :func:`extract_instances`.
+    """
+    h, w = image_rgb.shape[:2]
+    scale_x = w / _RENDER_W
+    scale_y = h / _RENDER_H
+
+    # Grayscale do pomiaru jasności
+    gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+
+    instances: list[dict[str, Any]] = []
+
+    for label, slots, tile_class_id in (
+        ("pellet", _PELLET_SLOTS, CLASS_TO_ID["pellet"]),
+        ("power_pellet", _POWER_SLOTS, CLASS_TO_ID["power_pellet"]),
+    ):
+        radius = sample_radius if label == "pellet" else sample_radius + 1
+        for row, col, cx, cy in slots:
+            px = int(cx * scale_x)
+            py = int(cy * scale_y)
+            x0 = max(0, px - radius)
+            y0 = max(0, py - radius)
+            x1 = min(w, px + radius + 1)
+            y1 = min(h, py + radius + 1)
+            patch = gray[y0:y1, x0:x1]
+            if patch.size == 0:
+                continue
+            if float(patch.max()) < brightness_threshold:
+                continue
+            bbox_w = int(_TILE_W * scale_x)
+            bbox_h = int(_TILE_H * scale_y)
+            bx = max(0, px - bbox_w // 2)
+            by = max(0, py - bbox_h // 2)
+            instances.append({
+                "label": label,
+                "class_id": tile_class_id,
+                "bbox": [bx, by, bbox_w, bbox_h],
+                "centroid": [float(px), float(py)],
+                "area": (2 * radius + 1) ** 2,
+                "grid": [row, col],
+            })
+
+    return instances
 
 DEFAULT_GROUP_LAYERS: dict[str, tuple[str, ...]] = {
     "pacman": ("pacman",),

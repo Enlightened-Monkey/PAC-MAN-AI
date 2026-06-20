@@ -16,7 +16,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 from src.environment.pacman_env import PacmanGridEnv
 from src.utils.maskable_env import load_trainable_model, predict_action, wrap_with_action_masker
-from src.utils.obs_sync import include_flags_from_checkpoint, validate_model_env
+from src.utils.obs_sync import obs_channel_config_from_checkpoint, validate_model_env
 from src.utils.pacman_renderer import render_state_rgb
 
 
@@ -36,6 +36,7 @@ def record_episode(
     max_steps: int = 8000,
     include_completion_plane: bool = False,
     include_frightened_plane: bool = False,
+    include_derived_planes: bool = False,
     use_action_masks: bool = True,
     stochastic: bool = False,
     fps: int = 10,
@@ -49,6 +50,7 @@ def record_episode(
         render_mode="rgb_array",
         include_completion_plane=include_completion_plane,
         include_frightened_plane=include_frightened_plane,
+        include_derived_planes=include_derived_planes,
     )
     if use_action_masks:
         base = wrap_with_action_masker(base)
@@ -99,12 +101,13 @@ def main() -> None:
         sys.exit(1)
 
     use_masks = not args.no_maskable
-    inc_c, inc_f = include_flags_from_checkpoint(str(ckpt), args.n_stack)
+    inc_c, inc_f, inc_d = obs_channel_config_from_checkpoint(str(ckpt), args.n_stack)
 
     def _make():
         e = PacmanGridEnv(
             seed=0, max_steps=args.max_steps, human_fair=True,
             include_completion_plane=inc_c, include_frightened_plane=inc_f,
+            include_derived_planes=inc_d,
         )
         if use_masks:
             e = wrap_with_action_masker(e)
@@ -137,6 +140,7 @@ def main() -> None:
         max_steps=args.max_steps,
         include_completion_plane=inc_c,
         include_frightened_plane=inc_f,
+        include_derived_planes=inc_d,
         use_action_masks=use_masks,
         stochastic=args.stochastic,
     )

@@ -19,7 +19,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from src.environment.game_logic import ROWS, COLS, TILE_PELLET, TILE_POWER
 from src.environment.pacman_env import PacmanGridEnv
 from src.utils.maskable_env import load_trainable_model, predict_action, wrap_with_action_masker
-from src.utils.obs_sync import include_flags_from_checkpoint, validate_model_env
+from src.utils.obs_sync import obs_channel_config_from_checkpoint, validate_model_env
 
 _EPISODE_INFO_KEYS = (
     "score",
@@ -52,11 +52,12 @@ def _initial_pellet_tiles() -> set[tuple[int, int]]:
     return tiles
 
 
-def _build_probe_env(max_steps, inc_c, inc_f, use_masks, n_stack):
+def _build_probe_env(max_steps, inc_c, inc_f, inc_d, use_masks, n_stack):
     def _make():
         e = PacmanGridEnv(
             seed=0, max_steps=max_steps, human_fair=True,
             include_completion_plane=inc_c, include_frightened_plane=inc_f,
+            include_derived_planes=inc_d,
         )
         if use_masks:
             e = wrap_with_action_masker(e)
@@ -77,6 +78,7 @@ def run_episodes(
     deterministic: bool,
     include_completion_plane: bool = False,
     include_frightened_plane: bool = False,
+    include_derived_planes: bool = False,
     use_action_masks: bool = True,
 ) -> dict:
     death_completions: list[float] = []
@@ -97,6 +99,7 @@ def run_episodes(
             human_fair=True,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
+            include_derived_planes=include_derived_planes,
         )
         if use_action_masks:
             base_env = wrap_with_action_masker(base_env)
@@ -294,10 +297,10 @@ def main() -> None:
         sys.exit(1)
 
     use_masks = not args.no_maskable
-    inc_c, inc_f = include_flags_from_checkpoint(str(ckpt), args.n_stack)
+    inc_c, inc_f, inc_d = obs_channel_config_from_checkpoint(str(ckpt), args.n_stack)
     seeds = list(range(args.seed_start, args.seed_start + args.episodes))
 
-    probe = _build_probe_env(args.max_steps, inc_c, inc_f, use_masks, args.n_stack)
+    probe = _build_probe_env(args.max_steps, inc_c, inc_f, inc_d, use_masks, args.n_stack)
     print(f"Running {args.episodes} episodes from {ckpt.name} (masks={use_masks})...")
     model = load_trainable_model(
         str(ckpt.with_suffix("")),
@@ -324,6 +327,7 @@ def main() -> None:
         deterministic=not args.stochastic,
         include_completion_plane=inc_c,
         include_frightened_plane=inc_f,
+        include_derived_planes=inc_d,
         use_action_masks=use_masks,
     )
 
@@ -350,6 +354,7 @@ def main() -> None:
             max_steps=args.max_steps,
             include_completion_plane=inc_c,
             include_frightened_plane=inc_f,
+            include_derived_planes=inc_d,
             use_action_masks=use_masks,
             stochastic=args.stochastic,
         )

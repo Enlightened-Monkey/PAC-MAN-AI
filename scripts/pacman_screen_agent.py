@@ -13,7 +13,7 @@ import termios
 import threading
 import time
 import tty
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # OpenCV wheel in this env ships Qt xcb platform plugin but no wayland plugin.
@@ -72,6 +72,29 @@ class AgentState:
     detection_enabled: bool = True
     locked_roi: tuple[int, int, int, int] | None = None
     last_playfield_bbox: tuple[int, int, int, int] | None = None
+
+
+@dataclass
+class VisionMemory:
+    """Vision-only latent state inferred from frame-to-frame observations."""
+
+    frame_idx: int = 0
+    level_estimate: int = 1
+    frightened_timer_est: int = 0
+    steps_since_pellet_est: int = 0
+    last_pellet_count: int = -1
+    last_power_count: int = -1
+    last_power_positions: list[tuple[int, int]] = field(default_factory=list)
+    last_pacman_pos: tuple[int, int] | None = None
+    last_event: str = "init"
+
+
+# Approximate frightened duration schedule for fair, vision-only internal timing.
+FRIGHTENED_TICKS_BY_LEVEL: dict[int, int] = {
+    1: 60, 2: 40, 3: 30, 4: 20, 5: 20, 6: 50, 7: 20, 8: 20,
+    9: 10, 10: 50, 11: 20, 12: 10, 13: 10, 14: 10, 15: 10,
+    16: 10, 17: 20, 18: 10,
+}
 
 
 class MjpegPreviewServer:
@@ -229,7 +252,94 @@ def nearest_ghost_distance(ghost_map: np.ndarray, x: int, y: int) -> float:
     return float(np.sqrt(dx * dx + dy * dy).min())
 
 
-def choose_direction(mask: np.ndarray, class_to_id: dict[str, int], state: AgentState) -> str | None:
+def _component_centers(binary: np.ndarray) -> list[tuple[int, int]]:
+    ys, xs = np.where(binary)
+    if len(xs) == 0:
+        return []
+    n, _labels, stats, centroids = cv2.connectedComponentsWithStats(binary.astype(np.uint8), connectivity=8)
+    out: list[tuple[int, int]] = []
+    for i in range(1, n):
+        _x, _y, _w, _h, area = stats[i]
+        if int(area) <= 0:
+            continue
+        cx, cy = centroids[i]
+        out.append((int(cx), int(cy)))
+    return out
+
+
+def _any_near(ref: tuple[int, int], pts: list[tuple[int, int]], radius: float) -> bool:
+    rx, ry = ref
+    rr2 = float(radius * radius)
+    for px, py in pts:
+        dx = float(px - rx)
+        dy = float(py - ry)
+        if dx * dx + dy * dy <= rr2:
+            return True
+    return False
+
+
+def update_vision_memory(memory: VisionMemory, mask: np.ndarray, class_to_id: dict[str, int]) -> VisionMemory:
+    memory.frame_idx += 1
+
+    pellet_id = class_to_id.get("pellet")
+    power_id = class_to_id.get("power_pellet")
+    pac_id = class_to_id.get("pacman")
+    fr_ghost_id = class_to_id.get("frightened_ghost")
+
+    pellet_count = int((mask == pellet_id).sum()) if pellet_id is not None else 0
+    power_count = int((mask == power_id).sum()) if power_id is not None else 0
+    total_collectibles = pellet_count + power_count
+
+    pac = centroid(mask == pac_id) if pac_id is not None else None
+    frightened_visible = bool(fr_ghost_id is not None and (mask == fr_ghost_id).any())
+    power_positions = _component_centers(mask == power_id) if power_id is not None else []
+
+    # Pellet timing estimate from visual change in collectible count.
+    if memory.last_pellet_count >= 0 and memory.last_power_count >= 0:
+        prev_total = memory.last_pellet_count + memory.last_power_count
+        if total_collectibles < prev_total:
+            memory.steps_since_pellet_est = 0
+            memory.last_event = "pellet_eaten"
+        else:
+            memory.steps_since_pellet_est += 1
+    else:
+        memory.steps_since_pellet_est = 0
+
+    # Level estimate (vision-only): collectible map reset indicates new board.
+    if memory.last_pellet_count >= 0 and memory.last_power_count >= 0:
+        prev_total = memory.last_pellet_count + memory.last_power_count
+        if total_collectibles - prev_total > 40:
+            memory.level_estimate = min(memory.level_estimate + 1, 21)
+            memory.last_event = "level_reset_detected"
+
+    # Power-pellet trigger estimate: power components dropped and Pac-Man was near previous power slot.
+    power_triggered = False
+    if (
+        memory.last_power_count >= 0
+        and power_count < memory.last_power_count
+        and pac is not None
+        and memory.last_power_positions
+        and _any_near(pac, memory.last_power_positions, radius=14.0)
+    ):
+        frightened_ticks = FRIGHTENED_TICKS_BY_LEVEL.get(memory.level_estimate, 0)
+        memory.frightened_timer_est = frightened_ticks
+        memory.last_event = "power_pellet_eaten"
+        power_triggered = True
+
+    # Keep timer alive while frightened ghosts are visible, otherwise decay.
+    if frightened_visible:
+        memory.frightened_timer_est = max(memory.frightened_timer_est, 2)
+    elif memory.frightened_timer_est > 0 and not power_triggered:
+        memory.frightened_timer_est -= 1
+
+    memory.last_pellet_count = pellet_count
+    memory.last_power_count = power_count
+    memory.last_power_positions = power_positions
+    memory.last_pacman_pos = pac
+    return memory
+
+
+def choose_direction(mask: np.ndarray, class_to_id: dict[str, int], state: AgentState, memory: VisionMemory) -> str | None:
     pac_id = class_to_id.get("pacman")
     wall_id = class_to_id.get("wall")
     pellet_id = class_to_id.get("pellet")
@@ -247,10 +357,16 @@ def choose_direction(mask: np.ndarray, class_to_id: dict[str, int], state: Agent
     pellets = (mask == pellet_id) | (mask == power_id if power_id is not None else False)
 
     ghost_map = np.zeros_like(mask, dtype=bool)
+    frightened_map = np.zeros_like(mask, dtype=bool)
     for name in GHOST_NAMES:
         cid = class_to_id.get(name)
         if cid is not None:
-            ghost_map |= mask == cid
+            if name == "frightened_ghost":
+                frightened_map |= mask == cid
+            elif name == "ghost_eyes":
+                continue
+            else:
+                ghost_map |= mask == cid
 
     directions = {
         "up": (0, -1, Key.up),
@@ -276,10 +392,20 @@ def choose_direction(mask: np.ndarray, class_to_id: dict[str, int], state: Agent
         pellet_score = float(pellets[by0:by1, bx0:bx1].sum())
 
         gdist = nearest_ghost_distance(ghost_map, nx, ny)
-        ghost_penalty = 16.0 / (gdist + 1.0)
+        ghost_penalty = 18.0 / (gdist + 1.0)
+
+        # Vision-only frightened timer helps switch from avoid -> chase behavior.
+        frightened_bonus = 0.0
+        if memory.frightened_timer_est > 0:
+            fgdist = nearest_ghost_distance(frightened_map, nx, ny)
+            frightened_bonus = 12.0 / (fgdist + 1.0)
+            ghost_penalty *= 0.35
+
+        # If agent has not observed pellet gain for long, bias toward exploration.
+        explore_bonus = min(memory.steps_since_pellet_est / 80.0, 1.0)
 
         forward_bonus = 0.8 if state.last_dir == name else 0.0
-        score = pellet_score * 0.35 - ghost_penalty + forward_bonus
+        score = pellet_score * 0.35 - ghost_penalty + frightened_bonus + forward_bonus + explore_bonus
 
         if score > best_score:
             best_score = score
@@ -308,6 +434,7 @@ def draw_yolo_style_overlay(
     direction: str | None,
     auto_enabled: bool,
     fps: float,
+    memory: VisionMemory | None = None,
 ) -> np.ndarray:
     vis = rgb.copy()
     x0, y0, bw, bh = playfield_bbox
@@ -364,6 +491,27 @@ def draw_yolo_style_overlay(
         1,
         cv2.LINE_AA,
     )
+    if memory is not None:
+        cv2.putText(
+            vis,
+            f"lvl~{memory.level_estimate}  fr_t~{memory.frightened_timer_est:02d}  pellet_t~{memory.steps_since_pellet_est:02d}",
+            (12, 72),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 220, 170),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            vis,
+            f"event: {memory.last_event}",
+            (380, 72),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (180, 220, 255),
+            1,
+            cv2.LINE_AA,
+        )
     cv2.putText(
         vis,
         "[s] toggle auto   [q] quit",
@@ -519,6 +667,7 @@ def main() -> None:
             ) from last_error
 
     state = AgentState(enabled=False, stop_requested=False, last_dir=None)
+    memory = VisionMemory()
     if fixed_roi is not None:
         state.locked_roi = fixed_roi
     toggle = TerminalToggle(state)
@@ -603,7 +752,8 @@ def main() -> None:
                         resized = cv2.resize(crop, (224, 248), interpolation=cv2.INTER_AREA)
                         mask = detector.predict_mask(resized)
 
-                        direction = choose_direction(mask, CLASS_TO_ID, state)
+                        memory = update_vision_memory(memory, mask, CLASS_TO_ID)
+                        direction = choose_direction(mask, CLASS_TO_ID, state, memory)
                         instances_local = extract_instances(mask, ID_TO_CLASS, min_area=10)
                         instances = remap_instances_to_image(instances_local, (x0, y0, bw, bh), mask.shape)
                         if direction is not None:
@@ -617,7 +767,9 @@ def main() -> None:
                     now = time.time()
                     fps = 1.0 / max(1e-6, now - last_tick)
                     last_tick = now
-                    vis = draw_yolo_style_overlay(rgb, instances, (x0, y0, bw, bh), direction, state.enabled, fps)
+                    vis = draw_yolo_style_overlay(
+                        rgb, instances, (x0, y0, bw, bh), direction, state.enabled, fps, memory=memory
+                    )
                     if state.locked_roi is not None:
                         rx, ry, rw, rh = clamp_bbox(state.locked_roi, frame_w, frame_h)
                         cv2.rectangle(vis, (rx, ry), (rx + rw, ry + rh), (255, 180, 0), 2)
@@ -633,7 +785,9 @@ def main() -> None:
                     now = time.time()
                     fps = 1.0 / max(1e-6, now - last_tick)
                     last_tick = now
-                    vis = draw_yolo_style_overlay(rgb, instances, (x0, y0, bw, bh), direction, state.enabled, fps)
+                    vis = draw_yolo_style_overlay(
+                        rgb, instances, (x0, y0, bw, bh), direction, state.enabled, fps, memory=memory
+                    )
                     if state.locked_roi is not None:
                         rx, ry, rw, rh = clamp_bbox(state.locked_roi, frame_w, frame_h)
                         cv2.rectangle(vis, (rx, ry), (rx + rw, ry + rh), (255, 180, 0), 2)
@@ -646,7 +800,7 @@ def main() -> None:
                 if now - last_log > 1.0:
                     print(
                         f"[agent] auto={'ON' if state.enabled else 'OFF'} det={'ON' if state.detection_enabled else 'OFF'} dir={direction} "
-                        f"bbox=({x0},{y0},{bw},{bh})"
+                        f"bbox=({x0},{y0},{bw},{bh}) fr_t~{memory.frightened_timer_est} pellet_t~{memory.steps_since_pellet_est} evt={memory.last_event}"
                     )
                     last_log = now
 

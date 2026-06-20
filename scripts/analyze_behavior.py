@@ -18,7 +18,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from src.environment.game_logic import ROWS, COLS, TILE_PELLET, TILE_POWER
 from src.environment.pacman_env import PacmanGridEnv
 from src.utils.maskable_env import load_trainable_model, predict_action, wrap_with_action_masker
-from src.utils.obs_sync import include_flags_from_checkpoint, validate_model_env
+from src.utils.obs_sync import obs_channel_config_from_checkpoint, validate_model_env
 
 _GHOST_NEAR_DIST = 5  # Manhattan tiles
 
@@ -55,11 +55,13 @@ def analyze_episode(
     *,
     include_completion_plane: bool = False,
     include_frightened_plane: bool = False,
+    include_derived_planes: bool = False,
 ) -> dict:
     base = PacmanGridEnv(
         seed=seed, max_steps=max_steps, human_fair=True,
         include_completion_plane=include_completion_plane,
         include_frightened_plane=include_frightened_plane,
+        include_derived_planes=include_derived_planes,
     )
     base = wrap_with_action_masker(base)
     venv = DummyVecEnv([lambda e=base: Monitor(e)])
@@ -145,11 +147,12 @@ def main() -> None:
         print(f"Missing: {ckpt}")
         sys.exit(1)
 
-    inc_c, inc_f = include_flags_from_checkpoint(str(ckpt), args.n_stack)
+    inc_c, inc_f, inc_d = obs_channel_config_from_checkpoint(str(ckpt), args.n_stack)
 
     def _probe():
         e = PacmanGridEnv(seed=0, max_steps=8000, human_fair=True,
-            include_completion_plane=inc_c, include_frightened_plane=inc_f)
+            include_completion_plane=inc_c, include_frightened_plane=inc_f,
+            include_derived_planes=inc_d)
         return Monitor(wrap_with_action_masker(e))
 
     probe = DummyVecEnv([_probe])
@@ -166,6 +169,7 @@ def main() -> None:
         analyze_episode(
             model, seed, args.n_stack, 8000,
             include_completion_plane=inc_c, include_frightened_plane=inc_f,
+            include_derived_planes=inc_d,
         )
         for seed in range(args.seed_start, args.seed_start + args.episodes)
     ]

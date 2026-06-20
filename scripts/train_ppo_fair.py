@@ -31,7 +31,11 @@ from src.utils.maskable_env import (
 )
 from src.utils.mlflow_logger import MLflowLogger
 from src.utils.ppo_cnn import policy_kwargs
-from src.utils.obs_sync import include_flags_from_checkpoint, peek_checkpoint, validate_model_env
+from src.utils.obs_sync import (
+    obs_channel_config_from_checkpoint,
+    peek_checkpoint,
+    validate_model_env,
+)
 from src.utils.training_callbacks import ConsoleCallback
 
 _EPISODE_INFO_KEYS = (
@@ -51,6 +55,7 @@ def make_env(
     *,
     include_completion_plane: bool = False,
     include_frightened_plane: bool = False,
+    include_derived_planes: bool = False,
     easy_endgame: bool = False,
     use_action_masks: bool = True,
 ) -> callable:
@@ -74,6 +79,7 @@ def make_env(
             human_fair=True,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
+            include_derived_planes=include_derived_planes,
             easy_endgame=easy_endgame,
         )
         if use_action_masks:
@@ -100,6 +106,7 @@ def build_vec_env(
     *,
     include_completion_plane: bool = False,
     include_frightened_plane: bool = False,
+    include_derived_planes: bool = False,
     easy_endgame: bool = False,
     use_action_masks: bool = True,
 ):
@@ -109,6 +116,7 @@ def build_vec_env(
             max_steps=max_steps,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
+            include_derived_planes=include_derived_planes,
             easy_endgame=easy_endgame,
             use_action_masks=use_action_masks,
         )
@@ -158,16 +166,19 @@ def train(args: argparse.Namespace) -> None:
     warm_starting = bool(warm_start_path)
     include_completion_plane = args.fresh_start
     include_frightened_plane = args.fresh_start
+    include_derived_planes = args.fresh_start and (not args.no_derived_planes)
     easy_endgame = args.fresh_start
     warm_source_steps = 0
     if resuming:
-        include_completion_plane, include_frightened_plane = include_flags_from_checkpoint(
+        include_completion_plane, include_frightened_plane, include_derived_planes = (
+            obs_channel_config_from_checkpoint(
             checkpoint_zip, N_STACK
+            )
         )
         easy_endgame = False
         print(
             f"[Resume] synced obs planes: completion={include_completion_plane}, "
-            f"frightened={include_frightened_plane}"
+            f"frightened={include_frightened_plane}, derived={include_derived_planes}"
         )
 
     initial_max_steps = 5000
@@ -190,6 +201,7 @@ def train(args: argparse.Namespace) -> None:
             max_steps=initial_max_steps,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
+            include_derived_planes=include_derived_planes,
             easy_endgame=easy_endgame,
             use_action_masks=use_maskable,
         )
@@ -209,8 +221,10 @@ def train(args: argparse.Namespace) -> None:
         if not os.path.exists(warm_start_path + ".zip"):
             raise FileNotFoundError(f"Warm-start checkpoint not found: {warm_start_path}.zip")
 
-        include_completion_plane, include_frightened_plane = include_flags_from_checkpoint(
+        include_completion_plane, include_frightened_plane, include_derived_planes = (
+            obs_channel_config_from_checkpoint(
             warm_start_path + ".zip", N_STACK
+            )
         )
         easy_endgame = False
 
@@ -219,6 +233,7 @@ def train(args: argparse.Namespace) -> None:
             max_steps=16000,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
+            include_derived_planes=include_derived_planes,
             easy_endgame=easy_endgame,
             use_action_masks=use_maskable,
         )
@@ -275,6 +290,7 @@ def train(args: argparse.Namespace) -> None:
             max_steps=initial_max_steps,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
+            include_derived_planes=include_derived_planes,
             easy_endgame=easy_endgame,
             use_action_masks=use_maskable,
         )
@@ -300,7 +316,12 @@ def train(args: argparse.Namespace) -> None:
                 tensorboard_log=tb_log,
             )
         reset_ts = True
-        ch = 9 + int(include_completion_plane) + int(include_frightened_plane)
+        ch = (
+            9
+            + int(include_completion_plane)
+            + int(include_frightened_plane)
+            + (6 if include_derived_planes else 0)
+        )
         algo = "MaskablePPO" if use_maskable else "PPO"
         print(f"[Initial run] {algo} + PacmanCNN ({ch}ch stacked x{N_STACK}).")
 
@@ -316,6 +337,7 @@ def train(args: argparse.Namespace) -> None:
         max_steps=initial_max_steps,
         include_completion_plane=include_completion_plane,
         include_frightened_plane=include_frightened_plane,
+        include_derived_planes=include_derived_planes,
         easy_endgame=easy_endgame,
         use_action_masks=use_maskable,
     )
@@ -343,6 +365,9 @@ def train(args: argparse.Namespace) -> None:
                 "milestone_thresholds": str(MILESTONE_THRESHOLDS),
                 "milestone_bonuses": str(MILESTONE_BONUSES),
                 "n_stack": N_STACK,
+                "include_completion_plane": include_completion_plane,
+                "include_frightened_plane": include_frightened_plane,
+                "include_derived_planes": include_derived_planes,
                 "death_penalty": -3.0,
                 "level_bonus": 5000.0,
                 "near_miss_penalty": NEAR_MISS_PENALTY,
@@ -370,6 +395,7 @@ def train(args: argparse.Namespace) -> None:
             n_stack=N_STACK,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
+            include_derived_planes=include_derived_planes,
             milestone_thresholds=MILESTONE_THRESHOLDS,
             milestone_bonuses=MILESTONE_BONUSES,
             near_miss_penalty=NEAR_MISS_PENALTY,
@@ -411,6 +437,7 @@ def train(args: argparse.Namespace) -> None:
                 max_steps=16000,
                 include_completion_plane=include_completion_plane,
                 include_frightened_plane=include_frightened_plane,
+                include_derived_planes=include_derived_planes,
                 easy_endgame=easy_endgame,
                 use_action_masks=use_maskable,
             )
@@ -481,6 +508,11 @@ def main() -> None:
     )
     parser.add_argument("--no-maskable", action="store_true")
     parser.add_argument("--eval-every", type=int, default=100_000)
+    parser.add_argument(
+        "--no-derived-planes",
+        action="store_true",
+        help="Disable legal engineered observation planes (danger/pellet topology).",
+    )
     parser.add_argument(
         "--device",
         type=str,
