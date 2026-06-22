@@ -18,68 +18,75 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
       "label": "pacman",
       "tile_position": [
-        9,
-        25
+        13,
+        23
       ],
       "bbox": [
-        68,
-        196,
+        100,
+        180,
         16,
         16
       ],
-      "direction": "up"
+      "direction": "right"
     },
     {
       "label": "blinky",
       "tile_position": [
-        12,
-        17
+        9,
+        12
       ],
       "bbox": [
+        68,
         92,
-        132,
         16,
         16
       ],
-      "direction": "right",
+      "direction": "down",
       "in_house": false,
       "eaten": false
     },
     {
       "label": "pinky",
       "tile_position": [
-        4,
-        1
+        13,
+        14
       ],
       "bbox": [
-        28,
-        4,
+        100,
+        108,
         16,
         16
       ],
-      "direction": "left",
-      "in_house": false,
+      "direction": "right",
+      "in_house": true,
       "eaten": false
     },
     {
       "label": "inky",
       "tile_position": [
         11,
-        13
+        14
       ],
       "bbox": [
         84,
-        100,
+        108,
         16,
         16
       ],
-      "direction": "up",
+      "direction": "right",
       "in_house": true,
       "eaten": false
     },
@@ -87,15 +94,15 @@
       "label": "clyde",
       "tile_position": [
         16,
-        13
+        14
       ],
       "bbox": [
         124,
-        100,
+        108,
         16,
         16
       ],
-      "direction": "up",
+      "direction": "right",
       "in_house": true,
       "eaten": false
     }
@@ -800,20 +807,20 @@
       "wall",
       "pellet",
       "pellet",
-      "pellet",
       "empty",
       "empty",
       "empty",
       "empty",
       "empty",
       "empty",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
       "wall",
       "wall",
       "pellet",
@@ -831,7 +838,37 @@
       "pellet",
       "wall",
       "wall",
+      "pellet",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
       "empty",
+      "wall",
+      "wall",
+      "pellet",
+      "wall",
+      "wall",
+      "pellet",
+      "wall",
+      "wall",
+      "wall"
+    ],
+    [
+      "wall",
+      "wall",
+      "wall",
+      "pellet",
+      "wall",
+      "wall",
+      "pellet",
+      "wall",
+      "wall",
+      "pellet",
       "wall",
       "wall",
       "wall",
@@ -853,36 +890,6 @@
     ],
     [
       "wall",
-      "wall",
-      "wall",
-      "pellet",
-      "wall",
-      "wall",
-      "pellet",
-      "wall",
-      "wall",
-      "empty",
-      "wall",
-      "wall",
-      "wall",
-      "wall",
-      "wall",
-      "wall",
-      "wall",
-      "wall",
-      "pellet",
-      "wall",
-      "wall",
-      "pellet",
-      "wall",
-      "wall",
-      "pellet",
-      "wall",
-      "wall",
-      "wall"
-    ],
-    [
-      "wall",
       "pellet",
       "pellet",
       "pellet",
@@ -891,8 +898,8 @@
       "pellet",
       "wall",
       "wall",
-      "empty",
-      "empty",
+      "pellet",
+      "pellet",
       "pellet",
       "pellet",
       "wall",
@@ -1033,16 +1040,16 @@
     ]
   ],
   "state": {
-    "score": 100,
-    "lives": 3,
-    "step_count": 43,
-    "pellets_eaten": 10,
-    "mode": "scatter",
+    "score": 150,
+    "lives": 1,
+    "step_count": 125,
+    "pellets_eaten": 15,
+    "mode": "chase",
     "fruit_active": false
   },
   "hud": {
-    "score": 100,
-    "lives": 3,
+    "score": 150,
+    "lives": 1,
     "level": 1,
     "fruit_active": false
   }

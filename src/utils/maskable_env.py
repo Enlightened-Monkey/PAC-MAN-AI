@@ -32,8 +32,11 @@ def create_maskable_ppo(
     ent_coef: float,
     device: str,
     tensorboard_log: str | None,
+    policy_kwargs_override: dict[str, Any] | None = None,
 ) -> MaskablePPO:
     from src.utils.ppo_cnn import policy_kwargs
+
+    chosen_policy_kwargs = policy_kwargs_override or policy_kwargs()
 
     return MaskablePPO(
         "CnnPolicy",
@@ -48,7 +51,7 @@ def create_maskable_ppo(
         ent_coef=ent_coef,
         vf_coef=0.5,
         max_grad_norm=0.5,
-        policy_kwargs=policy_kwargs(),
+        policy_kwargs=chosen_policy_kwargs,
         verbose=0,
         device=device,
         tensorboard_log=tensorboard_log,

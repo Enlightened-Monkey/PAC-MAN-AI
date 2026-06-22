@@ -18,18 +18,25 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
       "label": "pacman",
       "tile_position": [
-        11,
-        23
+        10,
+        17
       ],
       "bbox": [
-        84,
-        180,
+        76,
+        132,
         16,
         16
       ],
@@ -39,15 +46,15 @@
       "label": "blinky",
       "tile_position": [
         9,
-        14
+        18
       ],
       "bbox": [
         68,
-        108,
+        140,
         16,
         16
       ],
-      "direction": "down",
+      "direction": "up",
       "in_house": false,
       "eaten": false
     },
@@ -98,6 +105,20 @@
       "direction": "right",
       "in_house": true,
       "eaten": false
+    },
+    {
+      "label": "fruit_galaxian",
+      "tile_position": [
+        16,
+        14
+      ],
+      "bbox": [
+        124,
+        108,
+        16,
+        16
+      ],
+      "variant": "galaxian"
     }
   ],
   "grid_labels": [
@@ -711,9 +732,9 @@
       "pellet",
       "pellet",
       "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
+      "empty",
+      "empty",
+      "empty",
       "empty",
       "wall",
       "wall",
@@ -799,6 +820,7 @@
       "wall",
       "wall",
       "pellet",
+      "pellet",
       "empty",
       "empty",
       "empty",
@@ -806,8 +828,7 @@
       "empty",
       "empty",
       "empty",
-      "empty",
-      "empty",
+      "pellet",
       "pellet",
       "pellet",
       "pellet",
@@ -861,7 +882,7 @@
       "pellet",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "wall",
       "wall",
       "wall",
@@ -891,9 +912,9 @@
       "pellet",
       "wall",
       "wall",
-      "pellet",
-      "pellet",
-      "pellet",
+      "empty",
+      "empty",
+      "empty",
       "pellet",
       "wall",
       "wall",
@@ -1033,17 +1054,17 @@
     ]
   ],
   "state": {
-    "score": 110,
-    "lives": 1,
-    "step_count": 112,
-    "pellets_eaten": 11,
+    "score": 160,
+    "lives": 2,
+    "step_count": 171,
+    "pellets_eaten": 16,
     "mode": "chase",
-    "fruit_active": false
+    "fruit_active": true
   },
   "hud": {
-    "score": 110,
-    "lives": 1,
+    "score": 160,
+    "lives": 2,
     "level": 1,
-    "fruit_active": false
+    "fruit_active": true
   }
 }

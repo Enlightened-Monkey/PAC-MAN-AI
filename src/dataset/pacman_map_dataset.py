@@ -35,6 +35,9 @@ DEFAULT_GENERAL_SPRITE_SHEET = next(
     _DEFAULT_GENERAL_SPRITE_CANDIDATES[0],
 )
 
+# Pre-extracted assets folder used as the preferred sprite source when present.
+_DEFAULT_ASSETS_DIR = _REPO_ROOT / "data" / "labeled_maps" / "assets"
+
 FRAME_WIDTH = COLS * 8
 FRAME_HEIGHT = ROWS * 8
 TILE_SIZE = 8
@@ -72,7 +75,14 @@ CLASS_TO_ID: dict[str, int] = {
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13,
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20,
 }
 
 GHOST_NAME_TO_LABEL = {
@@ -500,23 +510,187 @@ class PacmanMapDatasetGenerator:
         general_sheet_path: str | Path = DEFAULT_GENERAL_SPRITE_SHEET,
         tile_size: int = TILE_SIZE,
         actor_size: int = ACTOR_SIZE,
+        assets_dir: str | Path | None = None,
     ) -> None:
         self.tile_size = int(tile_size)
         self.actor_size = int(actor_size)
-        self.extractor = PacmanSpriteSheetExtractor(general_sheet_path)
-        self.catalog = self.extractor.extract_catalog()
         self.frame_size = (COLS * self.tile_size, ROWS * self.tile_size)
+        self.extractor = PacmanSpriteSheetExtractor(general_sheet_path)
+
+        # Prefer pre-extracted assets dir over on-the-fly sprite-sheet extraction.
+        _resolved: Path | None = (
+            Path(assets_dir)
+            if assets_dir is not None
+            else (_DEFAULT_ASSETS_DIR if _DEFAULT_ASSETS_DIR.exists() else None)
+        )
+        if _resolved is not None and _resolved.exists():
+            self._source_assets_dir: Path | None = _resolved
+            self._build_all_from_assets_dir(_resolved)
+        else:
+            self._source_assets_dir = None
+            self.catalog = self.extractor.extract_catalog()
+            self._build_rich_catalogs(general_sheet_path)
+
         self._maze_background = self.catalog["maze_empty"].resize(
             self.frame_size, Image.Resampling.NEAREST
         )
-        self._pellet_tile = self.catalog["pellet"].resize(
-            (self.tile_size, self.tile_size), Image.Resampling.NEAREST
-        )
+        # Pellet sprite is 2×2 px — centre it in an 8×8 transparent tile instead of
+        # stretching, so it stays a tiny pixel-perfect dot on the maze.
+        _pellet_src = self.catalog["pellet"]
+        if _pellet_src.width < self.tile_size or _pellet_src.height < self.tile_size:
+            _pellet_canvas = Image.new("RGBA", (self.tile_size, self.tile_size), (0, 0, 0, 0))
+            _off_x = (self.tile_size - _pellet_src.width) // 2
+            _off_y = (self.tile_size - _pellet_src.height) // 2
+            _pellet_canvas.alpha_composite(_pellet_src, (_off_x, _off_y))
+            self._pellet_tile = _pellet_canvas
+        else:
+            self._pellet_tile = _pellet_src.resize(
+                (self.tile_size, self.tile_size), Image.Resampling.NEAREST
+            )
         self._power_tile = self.catalog["power_pellet"].resize(
             (self.tile_size, self.tile_size), Image.Resampling.NEAREST
         )
+    
+    def _build_all_from_assets_dir(self, assets_dir: Path) -> None:
+        """Load all sprites from pre-extracted PNG assets (no sprite-sheet needed)."""
+        a = assets_dir
 
-    def render_state(self, state: GameState) -> tuple[Image.Image, dict[str, Any], Image.Image]:
+        # Basic catalog entries (maze background, collectibles)
+        self.catalog: dict[str, Image.Image] = {
+            "maze_empty": Image.open(a / "backgrounds/maze/maze_empty.png").convert("RGBA"),
+            "maze_with_pellets": Image.open(a / "backgrounds/maze/maze_with_pellets.png").convert("RGBA"),
+            "pellet": Image.open(a / "tiles/collectibles/pellet.png").convert("RGBA"),
+            "power_pellet": Image.open(a / "tiles/collectibles/power_pellet.png").convert("RGBA"),
+        }
+
+        # Canonical closed-mouth Pac-Man (direction-independent)
+        _pacman_basic_path = a / "characters/pacman/normal/frame_02.png"
+        self.pacman_basic: Image.Image | None = (
+            Image.open(_pacman_basic_path).convert("RGBA")
+            if _pacman_basic_path.exists()
+            else None
+        )
+        if self.pacman_basic is not None:
+            self.catalog["pacman"] = self.pacman_basic
+
+        # pacman_frames[direction] = [frame_00, frame_01, frame_02]
+        self.pacman_frames: dict[str, list[Image.Image]] = {}
+        for direction in PACMAN_DIRECTIONS:
+            frames: list[Image.Image] = []
+            for frame_idx in range(2):
+                p = a / f"characters/pacman/normal/{direction}/frame_{frame_idx:02d}.png"
+                if p.exists():
+                    frames.append(Image.open(p).convert("RGBA"))
+            if self.pacman_basic is not None:
+                frames.append(self.pacman_basic)
+            self.pacman_frames[direction] = frames
+
+        # ghost_frames[label] = 8 frames in sprite-sheet order:
+        # right/f0, right/f1, left/f0, left/f1, up/f0, up/f1, down/f0, down/f1
+        self.ghost_frames: dict[str, list[Image.Image]] = {
+            label: [] for label in GHOST_NAME_TO_LABEL.values()
+        }
+        for ghost_label in GHOST_NAME_TO_LABEL.values():
+            ghost_frames_list: list[Image.Image] = []
+            for direction, phase in zip(GHOST_ANIM_DIRECTIONS, GHOST_ANIM_PHASES):
+                p = a / f"characters/ghosts/{ghost_label}/normal/{direction}/frame_{phase:02d}.png"
+                if p.exists():
+                    ghost_frames_list.append(Image.open(p).convert("RGBA"))
+            self.ghost_frames[ghost_label] = ghost_frames_list
+            if ghost_frames_list:
+                self.catalog[ghost_label] = ghost_frames_list[0]
+
+        # frightened frames: blue/f0, blue/f1, flash/f0, flash/f1
+        self.frightened_frames: list[Image.Image] = []
+        for variant in ("blue", "flash"):
+            for frame_idx in range(2):
+                p = a / f"characters/ghosts/shared/frightened/{variant}/frame_{frame_idx:02d}.png"
+                if p.exists():
+                    self.frightened_frames.append(Image.open(p).convert("RGBA"))
+        if self.frightened_frames:
+            self.catalog["frightened_ghost"] = self.frightened_frames[0]
+
+        # eyes frames (4 directions)
+        self.eyes_frames: list[Image.Image] = []
+        for frame_idx in range(4):
+            p = a / f"characters/ghosts/shared/eyes/frame_{frame_idx:02d}.png"
+            if p.exists():
+                self.eyes_frames.append(Image.open(p).convert("RGBA"))
+        if self.eyes_frames:
+            self.catalog["ghost_eyes"] = self.eyes_frames[0]
+
+        # fruit_frames in FRUIT_VARIANTS order
+        self.fruit_frames: list[tuple[str, Image.Image]] = []
+        for fruit_name, _ in FRUIT_VARIANTS:
+            p = a / f"items/fruits/{fruit_name}/frame_00.png"
+            if p.exists():
+                self.fruit_frames.append((fruit_name, Image.open(p).convert("RGBA")))
+
+    def _build_rich_catalogs(self, sheet_path: str | Path) -> None:
+        """Build extended catalogs with all animation frames and directions."""
+        sprite_sheet = Image.open(sheet_path).convert("RGBA")
+        
+        # Pac-Man animation frames for all 4 directions (4 frames each).
+        # For dataset labeling we use a single neutral closed-mouth frame
+        # so the model learns one canonical Pac-Man appearance regardless
+        # of movement direction.
+        self.pacman_frames: dict[str, list[Image.Image]] = {
+            "right": [],
+            "left": [],
+            "up": [],
+            "down": [],
+        }
+        
+        for direction in PACMAN_DIRECTIONS:
+            rotation = PACMAN_ROTATIONS[direction]
+            for box in PACMAN_RIGHT_FRAMES:
+                cropped = sprite_sheet.crop(box.as_tuple())
+                processed = _trim_to_content(_key_black_to_alpha(cropped))
+                rotated = processed.rotate(rotation, expand=True)
+                self.pacman_frames[direction].append(rotated)
+
+        # Canonical Pac-Man preview used for all directions in the labeled dataset.
+        self.pacman_basic = self.pacman_frames["right"][2] if self.pacman_frames["right"] else None
+        
+        # Ghost frames for each named ghost (8 frames = 2 phases × 4 directions)
+        self.ghost_frames: dict[str, list[Image.Image]] = {
+            name: [] for name in GHOST_NAME_TO_LABEL.values()
+        }
+        
+        for ghost_name, row in GHOST_ROW_BY_NAME.items():
+            for idx in range(8):
+                left = 456 + idx * 16
+                box = CropBox(left, row, left + 16, row + 16)
+                frame = sprite_sheet.crop(box.as_tuple())
+                processed = _trim_to_content(_key_black_to_alpha(frame))
+                self.ghost_frames[ghost_name].append(processed)
+        
+        # Frightened ghost frames (blue + flash)
+        self.frightened_frames: list[Image.Image] = []
+        for box in FRIGHTENED_BLUE_FRAMES:
+            frame = sprite_sheet.crop(box.as_tuple())
+            processed = _trim_to_content(_key_black_to_alpha(frame))
+            self.frightened_frames.append(processed)
+        for box in FRIGHTENED_FLASH_FRAMES:
+            frame = sprite_sheet.crop(box.as_tuple())
+            processed = _trim_to_content(_key_black_to_alpha(frame))
+            self.frightened_frames.append(processed)
+        
+        # Eyes frames (4 directions)
+        self.eyes_frames: list[Image.Image] = []
+        for box in EYES_FRAMES:
+            frame = sprite_sheet.crop(box.as_tuple())
+            processed = _trim_to_content(_key_black_to_alpha(frame))
+            self.eyes_frames.append(processed)
+        
+        # Fruit variants (8 types)
+        self.fruit_frames: list[tuple[str, Image.Image]] = []
+        for fruit_name, box in FRUIT_VARIANTS:
+            frame = sprite_sheet.crop(box.as_tuple())
+            processed = _trim_to_content(_key_black_to_alpha(frame))
+            self.fruit_frames.append((fruit_name, processed))
+
+    def render_state(self, state: GameState, forced_fruit_idx: int | None = None, *, skip_actors: bool = False) -> tuple[Image.Image, dict[str, Any], Image.Image]:
         frame = self._maze_background.copy()
         mask = Image.new("L", self.frame_size, color=CLASS_TO_ID["empty"])
         self._paint_tile_mask(mask, state.maze)
@@ -530,9 +704,21 @@ class PacmanMapDatasetGenerator:
                 elif cell == TILE_POWER:
                     frame.alpha_composite(self._power_tile, pixel_pos)
 
-        objects: list[dict[str, Any]] = []
+        if skip_actors:
+            annotation: dict[str, Any] = {
+                "image_size": {"width": self.frame_size[0], "height": self.frame_size[1]},
+                "tile_size": self.tile_size,
+                "class_to_id": CLASS_TO_ID,
+                "objects": [],
+            }
+            return frame.convert("RGB"), annotation, mask
 
-        pacman_sprite = self._pacman_sprite_for_direction(state.pacman_dir)
+        objects: list[dict[str, Any]] = []
+        
+        # Create deterministic RNG based on state
+        rng = np.random.default_rng()
+
+        pacman_sprite = self._pacman_sprite_for_direction(state.pacman_dir, rng=rng)
         pacman_bbox = self._place_actor(frame, mask, pacman_sprite, state.pacman_pos, CLASS_TO_ID["pacman"])
         objects.append(
             {
@@ -544,7 +730,7 @@ class PacmanMapDatasetGenerator:
         )
 
         for ghost in state.ghosts:
-            label, sprite = self._ghost_visual(ghost, frightened=state.frightened_timer > 0)
+            label, sprite = self._ghost_visual(ghost, frightened=state.frightened_timer > 0, rng=rng)
             bbox = self._place_actor(frame, mask, sprite, ghost.pos, CLASS_TO_ID[label])
             objects.append(
                 {
@@ -558,18 +744,31 @@ class PacmanMapDatasetGenerator:
             )
 
         if state.fruit_active:
+            # Choose fruit variant - use forced_fruit_idx if provided, else random
+            if forced_fruit_idx is not None:
+                fruit_idx = int(forced_fruit_idx) % len(self.fruit_frames)
+            else:
+                fruit_idx = int(rng.integers(0, len(self.fruit_frames)))
+            
+            fruit_name, fruit_img = self.fruit_frames[fruit_idx]
+            
+            # Map fruit name to class ID (fruit_cherry=13, fruit_strawberry=14, etc.)
+            fruit_class_key = f"fruit_{fruit_name}"
+            fruit_class_id = CLASS_TO_ID.get(fruit_class_key, CLASS_TO_ID.get("fruit_cherry", 13))
+            
             bbox = self._place_actor(
                 frame,
                 mask,
-                self._prepare_actor_sprite(self.catalog["fruit"]),
+                self._prepare_actor_sprite(fruit_img),
                 state.fruit_pos,
-                CLASS_TO_ID["fruit"],
+                fruit_class_id,
             )
             objects.append(
                 {
-                    "label": "fruit",
+                    "label": fruit_class_key,
                     "tile_position": [state.fruit_pos[1], state.fruit_pos[0]],
                     "bbox": list(bbox),
+                    "variant": fruit_name,
                 }
             )
 
@@ -615,7 +814,11 @@ class PacmanMapDatasetGenerator:
         for directory in (images_dir, masks_dir, labels_dir, assets_dir):
             directory.mkdir(parents=True, exist_ok=True)
 
-        self.extractor.export_catalog(assets_dir)
+        if self._source_assets_dir is not None:
+            import shutil
+            shutil.copytree(self._source_assets_dir, assets_dir, dirs_exist_ok=True)
+        else:
+            self.extractor.export_catalog(assets_dir)
         rng = np.random.default_rng(seed)
         created_annotations: list[Path] = []
 
@@ -623,12 +826,26 @@ class PacmanMapDatasetGenerator:
             sample_seed = int(rng.integers(0, 2**31 - 1))
             state = GameState(seed=sample_seed)
             rollout_steps = int(rng.integers(0, max_random_steps + 1))
-            for _ in range(rollout_steps):
+            
+            # Force rare class coverage: 50% samples with fruit (ALL 8 fruit types needed)
+            # Ensure we get good coverage of all fruit variants
+            force_fruit = float(rng.random()) < 0.50
+            force_fruit_variant_idx = None
+            if force_fruit:
+                # Ensure each of 8 fruit types appears in at least 1/8 of samples
+                force_fruit_variant_idx = index % 8
+            
+            for step_idx in range(rollout_steps):
                 if state.is_terminal():
                     break
                 state.step(int(rng.integers(0, 4)))
-
-            frame, annotation, mask = self.render_state(state)
+                
+                # Force fruit in 50% of samples
+                if force_fruit and step_idx % max(1, rollout_steps // 2) == 0:
+                    state.fruit_active = True
+                    state.fruit_pos = (14, 16)  # Safe middle position
+            
+            frame, annotation, mask = self.render_state(state, forced_fruit_idx=force_fruit_variant_idx)
             stem = f"sample_{index:05d}"
             image_path = images_dir / f"{stem}.png"
             mask_path = masks_dir / f"{stem}.png"
@@ -663,23 +880,37 @@ class PacmanMapDatasetGenerator:
         painted = Image.fromarray(mask_arr, mode="L")
         mask.paste(painted)
 
-    def _pacman_sprite_for_direction(self, direction: int) -> Image.Image:
-        sprite = self._prepare_actor_sprite(self.catalog["pacman"])
-        rotations = {
-            ACTION_RIGHT: 0,
-            ACTION_DOWN: 270,
-            ACTION_LEFT: 180,
-            ACTION_UP: 90,
-        }
-        return sprite.rotate(rotations[direction], expand=True)
+    def _pacman_sprite_for_direction(self, direction: int, rng: np.random.Generator | None = None) -> Image.Image:
+        """Return the canonical closed-mouth Pac-Man sprite.
 
-    def _ghost_visual(self, ghost: Any, frightened: bool) -> tuple[str, Image.Image]:
+        The dataset uses one direction-independent Pac-Man appearance so the
+        model learns a single basic Pac-Man label instead of separate mouth
+        poses for each movement direction.
+        """
+        if self.pacman_basic is not None:
+            return self._prepare_actor_sprite(self.pacman_basic)
+        return self._prepare_actor_sprite(self.catalog["pacman"])
+
+    def _ghost_visual(self, ghost: Any, frightened: bool, rng: np.random.Generator | None = None) -> tuple[str, Image.Image]:
+        """Get random ghost sprite with current state."""
         if ghost.eaten:
-            return "ghost_eyes", self._prepare_actor_sprite(self.catalog["ghost_eyes"])
+            if not self.eyes_frames:
+                return "ghost_eyes", self._prepare_actor_sprite(self.catalog["ghost_eyes"])
+            idx = int((rng or np.random.default_rng()).integers(0, len(self.eyes_frames)))
+            return "ghost_eyes", self._prepare_actor_sprite(self.eyes_frames[idx])
+        
         if frightened and not ghost.in_house:
-            return "frightened_ghost", self._prepare_actor_sprite(self.catalog["frightened_ghost"])
+            if not self.frightened_frames:
+                return "frightened_ghost", self._prepare_actor_sprite(self.catalog["frightened_ghost"])
+            idx = int((rng or np.random.default_rng()).integers(0, len(self.frightened_frames)))
+            return "frightened_ghost", self._prepare_actor_sprite(self.frightened_frames[idx])
+        
         label = GHOST_NAME_TO_LABEL[ghost.name]
-        return label, self._prepare_actor_sprite(self.catalog[label])
+        ghost_frames = self.ghost_frames.get(label, [])
+        if not ghost_frames:
+            return label, self._prepare_actor_sprite(self.catalog[label])
+        idx = int((rng or np.random.default_rng()).integers(0, len(ghost_frames)))
+        return label, self._prepare_actor_sprite(ghost_frames[idx])
 
     def _prepare_actor_sprite(self, image: Image.Image) -> Image.Image:
         return _fit_to_canvas(image, (self.actor_size, self.actor_size))
@@ -745,6 +976,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     generate = subparsers.add_parser("generate", help="Generate labelled Pac-Man frames.")
     generate.add_argument("--sheet", type=Path, default=DEFAULT_GENERAL_SPRITE_SHEET)
+    generate.add_argument("--assets-dir", type=Path, default=None,
+                          help="Pre-extracted assets folder (default: data/labeled_maps/assets if present).")
     generate.add_argument("--output-dir", type=Path, required=True)
     generate.add_argument("--samples", type=int, default=64)
     generate.add_argument("--seed", type=int, default=0)
@@ -765,7 +998,7 @@ def main() -> None:
         extractor.audit_catalog(args.output_dir)
         return
 
-    generator = PacmanMapDatasetGenerator(args.sheet)
+    generator = PacmanMapDatasetGenerator(args.sheet, assets_dir=args.assets_dir)
     generator.generate_dataset(
         args.output_dir,
         sample_count=args.samples,

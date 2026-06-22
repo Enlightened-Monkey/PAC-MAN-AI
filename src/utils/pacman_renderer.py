@@ -1,8 +1,17 @@
-"""Arcade-style RGB renderer for Pac-Man GameState."""
+"""Arcade-style RGB renderer for Pac-Man GameState.
+
+Primary path  : sprite-based renderer using ``PacmanMapDatasetGenerator``
+                (real arcade sprites from the project sprite sheet).
+Fallback path : simple disk/wedge renderer when the sprite sheet is not found.
+"""
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Optional
+
 import numpy as np
+import cv2
 
 from src.environment.game_logic import (
     GameState,
@@ -17,6 +26,90 @@ from src.environment.game_logic import (
     ACTION_LEFT,
     ACTION_RIGHT,
 )
+
+# ---------------------------------------------------------------------------
+# Sprite-based renderer (primary)
+# ---------------------------------------------------------------------------
+
+_sprite_gen = None  # lazy singleton
+
+
+def _get_sprite_gen():
+    """Return a cached PacmanMapDatasetGenerator, or None if unavailable."""
+    global _sprite_gen
+    if _sprite_gen is not None:
+        return _sprite_gen
+    try:
+        from src.dataset.pacman_map_dataset import PacmanMapDatasetGenerator, DEFAULT_GENERAL_SPRITE_SHEET
+        if not Path(DEFAULT_GENERAL_SPRITE_SHEET).exists():
+            return None
+        _sprite_gen = PacmanMapDatasetGenerator()
+        return _sprite_gen
+    except Exception:
+        return None
+
+
+def render_state_rgb_sprites(
+    state: GameState,
+    scale: int = 2,
+    skip_actors: bool = False,
+) -> np.ndarray:
+    """Render GameState using real arcade sprite assets.
+
+    Returns an ``(H, W, 3)`` uint8 numpy array.  Pixels are scaled by
+    ``scale`` (nearest-neighbour) so the window is large enough to read.
+    Falls back to the disk renderer if the sprite sheet is unavailable.
+    When ``skip_actors=True`` actors (Pac-Man, ghosts, fruit) are omitted so
+    an animated overlay can be drawn on top without double-frame artefacts.
+    """
+    gen = _get_sprite_gen()
+    if gen is None:
+        return render_state_rgb(state, cell_size=8 * scale)
+
+    from PIL import Image as _Image
+    pil_img, _, _ = gen.render_state(state, skip_actors=skip_actors)
+    if scale != 1:
+        new_w = pil_img.width * scale
+        new_h = pil_img.height * scale
+        pil_img = pil_img.resize((new_w, new_h), _Image.Resampling.NEAREST)
+    return np.array(pil_img, dtype=np.uint8)
+
+
+def render_state_with_hud_sprites(
+    state: GameState,
+    info: dict | None = None,
+    scale: int = 2,
+    skip_actors: bool = False,
+) -> np.ndarray:
+    """Sprite-rendered game + arcade HUD (score, 1UP, HIGH SCORE, lives strip)."""
+    info = info or {}
+    board = render_state_rgb_sprites(state, scale=scale, skip_actors=skip_actors)
+
+    top_h = 34
+    bottom_h = 30
+    full = np.zeros((board.shape[0] + top_h + bottom_h, board.shape[1], 3), dtype=np.uint8)
+    full[top_h: top_h + board.shape[0]] = board
+
+    W = full.shape[1]
+    # --- top HUD ---
+    cv2.putText(full, "1UP", (14, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(full, f"{state.score:,}", (14, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255,255,255), 2, cv2.LINE_AA)
+    high = int(info.get("high_score", state.score))
+    cv2.putText(full, "HIGH SCORE", (W//2 - 82, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(full, f"{high:,}", (W//2 - 35, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(full, f"LVL {state.level}", (W - 95, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,255), 2, cv2.LINE_AA)
+    pl = float(info.get("pellet_levels", state.level - 1))
+    cv2.putText(full, f"PEL {pl:.2f}", (W - 95, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,220,170), 1, cv2.LINE_AA)
+
+    # --- bottom HUD: life icons ---
+    icon_y = full.shape[0] - 16
+    for idx in range(int(state.lives)):
+        _draw_pacman(full, icon_y, 18 + idx * 20, 7, ACTION_RIGHT)
+
+    # --- mode annotation ---
+    mode = "FRIGHTENED" if state.frightened_timer > 0 else state.mode.upper()
+    cv2.putText(full, mode, (W//2 - 55, full.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180,220,255), 1, cv2.LINE_AA)
+    return full
 
 # Arcade-inspired palette (RGB)
 _COLOR_BG = np.array([0, 0, 0], dtype=np.uint8)
@@ -147,10 +240,44 @@ def render_state_rgb(
 def render_hud_text(state: GameState, info: dict | None = None) -> str:
     """One-line HUD string for notebooks."""
     info = info or {}
+    pellet_levels = info.get("pellet_levels", (state.level - 1) + info.get("pellet_completion", 0))
     return (
-        f"Score: {state.score:,}  |  Level: {state.level}  |  Lives: {state.lives}  |  "
-        f"Pellets: {info.get('pellet_completion', 0)*100:.0f}%"
+        f"Score: {state.score:,}  |  1UP  |  Level: {state.level}  |  Lives: {state.lives}  |  "
+        f"Pellet levels: {float(pellet_levels):.2f}"
     )
+
+
+def _draw_life_icon(img: np.ndarray, cy: int, cx: int, radius: int = 8) -> None:
+    _draw_pacman(img, cy, cx, radius, ACTION_RIGHT)
+
+
+def render_state_with_hud(
+    state: GameState,
+    info: dict | None = None,
+    cell_size: int = 14,
+    pad: int = 2,
+) -> np.ndarray:
+    """Disk-based board + HUD (used as fallback or in notebooks)."""
+    info = info or {}
+    board = render_state_rgb(state, cell_size=cell_size, pad=pad)
+    top_h = 34
+    bottom_h = 30
+    out = np.zeros((board.shape[0] + top_h + bottom_h, board.shape[1], 3), dtype=np.uint8)
+    out[:] = _COLOR_BG
+    out[top_h : top_h + board.shape[0]] = board
+    cv2.putText(out, "1UP", (14, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(out, f"{state.score:,}", (14, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
+    high_score = info.get("high_score", state.score)
+    cv2.putText(out, "HIGH SCORE", (out.shape[1]//2 - 85, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(out, f"{int(high_score):,}", (out.shape[1]//2 - 40, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(out, f"LVL {state.level}", (out.shape[1] - 98, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(out, f"PEL {float(info.get('pellet_levels', state.level-1)):.2f}", (out.shape[1]-98, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,220,170), 1, cv2.LINE_AA)
+    icon_y = out.shape[0] - 16
+    for idx in range(int(state.lives)):
+        _draw_life_icon(out, icon_y, 18 + idx * 20, radius=7)
+    mode = "FRIGHTENED" if state.frightened_timer > 0 else state.mode.upper()
+    cv2.putText(out, mode, (out.shape[1]//2 - 55, out.shape[0]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180,220,255), 1, cv2.LINE_AA)
+    return out
 
 
 def ghost_legend_lines() -> list[str]:

@@ -18,18 +18,25 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
       "label": "pacman",
       "tile_position": [
-        21,
-        23
+        18,
+        20
       ],
       "bbox": [
-        164,
-        180,
+        140,
+        156,
         16,
         16
       ],
@@ -38,12 +45,28 @@
     {
       "label": "blinky",
       "tile_position": [
-        24,
-        29
+        18,
+        19
       ],
       "bbox": [
-        188,
-        228,
+        140,
+        148,
+        16,
+        16
+      ],
+      "direction": "down",
+      "in_house": false,
+      "eaten": false
+    },
+    {
+      "label": "pinky",
+      "tile_position": [
+        7,
+        20
+      ],
+      "bbox": [
+        52,
+        156,
         16,
         16
       ],
@@ -52,39 +75,39 @@
       "eaten": false
     },
     {
-      "label": "pinky",
-      "tile_position": [
-        13,
-        14
-      ],
-      "bbox": [
-        100,
-        108,
-        16,
-        16
-      ],
-      "direction": "right",
-      "in_house": true,
-      "eaten": false
-    },
-    {
       "label": "inky",
       "tile_position": [
         11,
-        14
+        15
       ],
       "bbox": [
         84,
-        108,
+        116,
         16,
         16
       ],
-      "direction": "right",
+      "direction": "down",
       "in_house": true,
       "eaten": false
     },
     {
       "label": "clyde",
+      "tile_position": [
+        16,
+        15
+      ],
+      "bbox": [
+        124,
+        116,
+        16,
+        16
+      ],
+      "direction": "down",
+      "in_house": true,
+      "eaten": false
+    },
+    {
+      "label": "fruit_apple",
       "tile_position": [
         16,
         14
@@ -95,9 +118,7 @@
         16,
         16
       ],
-      "direction": "right",
-      "in_house": true,
-      "eaten": false
+      "variant": "apple"
     }
   ],
   "grid_labels": [
@@ -693,7 +714,7 @@
       "empty",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "wall",
       "wall",
       "wall",
@@ -720,11 +741,11 @@
       "empty",
       "empty",
       "empty",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
       "pellet",
       "pellet",
       "pellet",
@@ -753,7 +774,7 @@
       "wall",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "wall",
       "wall",
       "wall",
@@ -808,12 +829,12 @@
       "empty",
       "empty",
       "empty",
-      "empty",
-      "empty",
-      "empty",
-      "empty",
-      "empty",
-      "empty",
+      "pellet",
+      "pellet",
+      "pellet",
+      "pellet",
+      "pellet",
+      "pellet",
       "wall",
       "wall",
       "pellet",
@@ -840,7 +861,7 @@
       "wall",
       "wall",
       "wall",
-      "empty",
+      "pellet",
       "wall",
       "wall",
       "pellet",
@@ -870,7 +891,7 @@
       "wall",
       "wall",
       "wall",
-      "empty",
+      "pellet",
       "wall",
       "wall",
       "pellet",
@@ -1033,17 +1054,17 @@
     ]
   ],
   "state": {
-    "score": 150,
-    "lives": 1,
-    "step_count": 173,
-    "pellets_eaten": 15,
+    "score": 140,
+    "lives": 3,
+    "step_count": 91,
+    "pellets_eaten": 14,
     "mode": "chase",
-    "fruit_active": false
+    "fruit_active": true
   },
   "hud": {
-    "score": 150,
-    "lives": 1,
+    "score": 140,
+    "lives": 3,
     "level": 1,
-    "fruit_active": false
+    "fruit_active": true
   }
 }

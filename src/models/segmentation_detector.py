@@ -20,9 +20,9 @@ from src.environment.game_logic import DEFAULT_MAZE_ARR, TILE_PELLET, TILE_POWER
 ID_TO_CLASS = {idx: name for name, idx in CLASS_TO_ID.items()}
 
 # ---------------------------------------------------------------------------
-# Stała maska slotów pellet / power_pellet wyprowadzona z arcade'owej mapy
+# Static pellet / power_pellet slot mask derived from the arcade maze layout
 # ---------------------------------------------------------------------------
-# Wymiary renderowanego playfieldu (224×248 px, 28 kolumn × 31 wierszy)
+# Rendered playfield dimensions (224×248 px, 28 columns × 31 rows)
 _RENDER_W = 224
 _RENDER_H = 248
 _MAZE_ROWS = DEFAULT_MAZE_ARR.shape[0]   # 31
@@ -32,13 +32,13 @@ _TILE_H = _RENDER_H / _MAZE_ROWS         # ~8.0 px
 
 
 def _slot_center(row: int, col: int) -> tuple[int, int]:
-    """Pikselowy środek kafelka (row, col) w 224×248 frame."""
+    """Pixel-space centre of tile (row, col) in the 224×248 frame."""
     cx = int((col + 0.5) * _TILE_W)
     cy = int((row + 0.5) * _TILE_H)
     return cx, cy
 
 
-# Precompute raz przy imporcie — lista (row, col, cx, cy) dla każdego slotu
+# Precomputed once at import time — list of (row, col, cx, cy) for every slot
 _PELLET_SLOTS: list[tuple[int, int, int, int]] = []
 _POWER_SLOTS: list[tuple[int, int, int, int]] = []
 for _r in range(_MAZE_ROWS):
@@ -56,10 +56,10 @@ def build_pellet_slot_mask(
     img_shape: tuple[int, int] = (_RENDER_H, _RENDER_W),
     include_power: bool = True,
 ) -> np.ndarray:
-    """Zwraca uint8 maskę (H×W) z 255 w miejscach możliwych pelletów.
+    """Return a uint8 mask (H×W) with 255 at all possible pellet positions.
 
-    Przydatna do nakładania na frame i do weryfikacji mapowania siatki.
-    *img_shape* pozwala przeskalować maskę do innego rozmiaru niż 248×224.
+    Useful for overlaying on a frame and verifying the tile grid mapping.
+    *img_shape* allows scaling the mask to a size other than 248×224.
     """
     mask = np.zeros(img_shape[:2], dtype=np.uint8)
     h, w = img_shape[:2]
@@ -82,19 +82,20 @@ def detect_pellets_grid(
     brightness_threshold: int = 160,
     sample_radius: int = 2,
 ) -> list[dict[str, Any]]:
-    """Wykrywa pellety bez sieci neuronowej — przez próbkowanie jasności.
+    """Detect pellets without a neural network — by brightness sampling.
 
-    Dla każdego stałego slotu z mapy arcade sprawdza, czy w okolicach środka
-    kafelka w podanym *image_rgb* (224×248) jest wystarczająco jasny piksel
-    (pellets i power_pellets to jasne punkty na ciemnym tle).
+    For each fixed slot in the arcade maze layout, checks whether a
+    sufficiently bright pixel exists near the tile centre in *image_rgb*
+    (224×248).  Pellets and power pellets are bright points on a dark
+    background.
 
-    Zwraca listę instances w tym samym formacie co :func:`extract_instances`.
+    Returns a list of instances in the same format as :func:`extract_instances`.
     """
     h, w = image_rgb.shape[:2]
     scale_x = w / _RENDER_W
     scale_y = h / _RENDER_H
 
-    # Grayscale do pomiaru jasności
+    # Convert to greyscale for brightness measurement
     gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
 
     instances: list[dict[str, Any]] = []
@@ -189,7 +190,7 @@ class DoubleConv(nn.Module):
 
 
 class TinyUNet(nn.Module):
-    def __init__(self, in_channels: int = 3, num_classes: int = 14) -> None:
+    def __init__(self, in_channels: int = 3, num_classes: int = 21) -> None:
         super().__init__()
         self.enc1 = DoubleConv(in_channels, 32)
         self.enc2 = DoubleConv(32, 64)
@@ -266,7 +267,13 @@ class SegmentationDetector:
         final_train_loss = 0.0
         final_val_loss = 0.0
 
-        for _epoch in range(config.epochs):
+        try:
+            import mlflow
+            _mlflow_active = mlflow.active_run() is not None
+        except ImportError:
+            _mlflow_active = False
+
+        for epoch in range(config.epochs):
             self.model.train()
             train_losses: list[float] = []
             for images, masks in train_loader:
@@ -299,6 +306,14 @@ class SegmentationDetector:
                     self.save(config.output_path)
             else:
                 self.save(config.output_path)
+
+            print(f"  epoch {epoch + 1}/{config.epochs}  train_loss={final_train_loss:.4f}  val_loss={final_val_loss:.4f}")
+
+            if _mlflow_active:
+                mlflow.log_metrics(
+                    {"epoch_train_loss": final_train_loss, "epoch_val_loss": final_val_loss},
+                    step=epoch,
+                )
 
         if val_loader is None:
             best_val = final_train_loss

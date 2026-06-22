@@ -39,3 +39,22 @@ def policy_kwargs(features_dim: int = 256) -> dict:
         features_extractor_kwargs=dict(features_dim=features_dim),
         net_arch=dict(pi=[128, 128], vf=[128, 128]),
     )
+
+
+_MODEL_SPECS = {
+    "base": dict(features_dim=256, pi=[128, 128], vf=[128, 128]),
+    "large": dict(features_dim=384, pi=[256, 256, 128], vf=[256, 256, 128]),
+    "xl": dict(features_dim=512, pi=[512, 256, 128], vf=[512, 256, 128]),
+}
+
+
+def policy_kwargs_for_size(model_size: str = "base") -> dict:
+    spec = _MODEL_SPECS.get(model_size)
+    if spec is None:
+        valid = ", ".join(sorted(_MODEL_SPECS))
+        raise ValueError(f"Unknown model size '{model_size}'. Valid: {valid}")
+    return dict(
+        features_extractor_class=PacmanCNN,
+        features_extractor_kwargs=dict(features_dim=spec["features_dim"]),
+        net_arch=dict(pi=spec["pi"], vf=spec["vf"]),
+    )

@@ -18,7 +18,14 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
@@ -63,7 +70,7 @@
         16,
         16
       ],
-      "direction": "up",
+      "direction": "left",
       "in_house": true,
       "eaten": false
     },
@@ -79,7 +86,7 @@
         16,
         16
       ],
-      "direction": "up",
+      "direction": "left",
       "in_house": true,
       "eaten": false
     },
@@ -95,7 +102,7 @@
         16,
         16
       ],
-      "direction": "up",
+      "direction": "left",
       "in_house": true,
       "eaten": false
     }
@@ -713,8 +720,8 @@
       "pellet",
       "pellet",
       "pellet",
-      "pellet",
-      "pellet",
+      "empty",
+      "empty",
       "wall",
       "wall",
       "pellet",
@@ -744,7 +751,7 @@
       "wall",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "wall",
       "wall",
       "pellet",
@@ -774,7 +781,7 @@
       "wall",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "wall",
       "wall",
       "pellet",
@@ -800,14 +807,14 @@
       "wall",
       "pellet",
       "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
-      "pellet",
       "empty",
       "empty",
-      "pellet",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
+      "empty",
       "pellet",
       "pellet",
       "pellet",
@@ -831,7 +838,7 @@
       "pellet",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "wall",
       "wall",
       "wall",
@@ -1033,16 +1040,16 @@
     ]
   ],
   "state": {
-    "score": 0,
-    "lives": 3,
-    "step_count": 0,
-    "pellets_eaten": 0,
-    "mode": "scatter",
+    "score": 110,
+    "lives": 0,
+    "step_count": 134,
+    "pellets_eaten": 11,
+    "mode": "chase",
     "fruit_active": false
   },
   "hud": {
-    "score": 0,
-    "lives": 3,
+    "score": 110,
+    "lives": 0,
     "level": 1,
     "fruit_active": false
   }

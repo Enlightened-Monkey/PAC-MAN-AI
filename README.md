@@ -6,24 +6,26 @@ mechanics of the original 1980 arcade game (28×31 maze, 4 ghosts with
 authentic Target-Tile AI, scatter/chase/frightened wave schedule, ghost
 house, tunnel warp, Cruise Elroy, ghost combo scoring).
 
-The project covers MaskablePPO training (sb3-contrib), a CNN frame →
-state-vector regressor, MLflow experiment tracking and SHAP /
+The project covers MaskablePPO training (sb3-contrib), a segmentation
+U-Net for pixel-to-state inference, MLflow experiment tracking and SHAP /
 permutation-based interpretability of the learned policy.
 
 ## 1. Problem Statement
 
 Train an agent that can play an arcade-faithful Pac-Man purely from the
 state vector exposed by our custom `gymnasium.Env`. We additionally train
-a CNN that recovers that same state vector from rendered frames so the
-RL policy can in principle be driven by pixels.
+a segmentation U-Net that recovers that same state from rendered frames so
+the RL policy can in principle be driven by pixels.
 
 ## 2. Methods (advanced techniques)
 
 | # | Technique | Where | Course module |
 |---|-----------|-------|---------------|
-| 1 | **MaskablePPO** (Proximal Policy Optimization with action masking, sb3-contrib) on the custom CNN-channel environment | `notebooks/rl_env/02_rl_training.ipynb`, `src/models/rl_agent.py` | Reinforcement Learning |
-| 2 | **U-Net screenshot segmentation pipeline** (synthetic map generation, training, mIoU evaluation, real-screen inference) | `notebooks/cnn_generated_screens/06_07_08.ipynb`, `src/models/segmentation_detector.py` | Deep Learning / CV |
-| 3 | **Permutation importance + SHAP** attribution of the MaskablePPO critic (V(s)) | `notebooks/rl_env/05_interpretability.ipynb` | Interpretability |
+| 1 | **Random baseline** — uniform action policy, reward / episode-length distribution | `notebooks/pacman_ai_full_workflow.ipynb` §1 | RL fundamentals |
+| 2 | **Semantic segmentation U-Net** (TinyU-Net, pixel-wise 13-class, mIoU evaluation) | `notebooks/pacman_ai_full_workflow.ipynb` §4–5, `src/models/segmentation_detector.py` | Deep Learning / CV |
+| 3 | **Slot-mask pellet detection** — deterministic brightness threshold (no NN) | `notebooks/pacman_ai_full_workflow.ipynb` §6, `src/models/segmentation_detector.py` | Classical CV |
+| 4 | **MaskablePPO** (action-masked PPO, sb3-contrib) with two-phase curriculum | `notebooks/pacman_ai_full_workflow.ipynb` §7, `scripts/train_ppo_fair.py` | Reinforcement Learning |
+| 5 | **Permutation importance + SHAP GradientExplainer** on the PPO critic V(s) | `notebooks/pacman_ai_full_workflow.ipynb` §8 | Interpretability |
 
 ## 3. Repository Layout
 
@@ -31,79 +33,80 @@ RL policy can in principle be driven by pixels.
 PAC-MAN-AI/
 ├── data/
 │   ├── raw/
-│   │   └── sprites/                    # Source sprite sheets (manual/reference)
+│   │   └── sprites/                    # Source sprite sheets
 │   ├── segmentation/                   # Canonical train/test segmentation datasets
 │   ├── labeled_maps/                   # Generated labeled maps with manifest
 │   └── pellet_probe/                   # Pellet-detection debug captures
 ├── docs/
 │   ├── PROJECT_STRUCTURE.md            # Conventions & hygiene rules
+│   ├── SOURCES.md                      # Academic bibliography (23 entries)
 │   └── reference/
 │       └── Pac-Man Arcade SI i Mechanika.md
 ├── notebooks/
-│   ├── rl_env/
-│   │   ├── 01_env_testing.ipynb         # Custom env sanity checks & EDA
-│   │   ├── 02_rl_training.ipynb         # MaskablePPO training on the state vector
-│   │   ├── 04_pipeline_integration.ipynb # Frame → CNN → RL agent (end-to-end)
-│   │   └── 05_interpretability.ipynb    # Permutation / SHAP on the MaskablePPO policy
-│   └── cnn_generated_screens/
-│       ├── 01_inicjalizacja_i_labelowanie.ipynb  # Data init & labelling
-│       ├── 02_uczenie_modelu.ipynb               # Model training
-│       ├── 03_integracja_mlops.ipynb             # MLOps integration
-│       ├── 04_statystyki_i_wizualizacja.ipynb    # Stats & visualisation
-│       └── 06_07_08.ipynb               # Segmentation end-to-end workflow
+│   └── pacman_ai_full_workflow.ipynb   # Single end-to-end notebook (11 sections)
 ├── scripts/
 │   ├── train_ppo_fair.py               # Main PPO training script (GPU/CPU)
+│   ├── benchmark_agents.py             # Direct-state vs vision agent benchmark
 │   ├── diagnose_plateau.py             # Post-training behaviour diagnosis
 │   ├── validate_training_setup.py      # Model/env shape compatibility check
 │   ├── analyze_behavior.py             # Agent behaviour analysis
 │   ├── audit_level_clear.py            # Level-clear audit
 │   ├── plot_training.py                # Generate training curve plots
-│   ├── record_episode.py              # Record demo episode GIF/video
-│   ├── pacman_screen_agent.py         # Live screen-capture agent
-│   └── archive_data_snapshots.sh      # Archive transient data outputs
+│   ├── record_episode.py               # Record demo episode GIF/video
+│   ├── generate_example_labeled_map.py # Single labeled map preview
+│   └── generate_labeled_maps_atlas.py  # Labeled map atlas generation
 ├── src/
+│   ├── apps/
+│   │   └── dual_agent_lab.py           # Side-by-side direct-state vs vision demo
 │   ├── environment/
-│   │   ├── game_logic.py                # Arcade-faithful game rules + ghost AI
-│   │   └── pacman_env.py                # gymnasium.Env wrapper
+│   │   ├── game_logic.py               # Arcade-faithful game rules + ghost AI
+│   │   └── pacman_env.py               # gymnasium.Env wrapper (PacmanEnv, PacmanGridEnv)
 │   ├── dataset/
-│   │   └── pacman_map_dataset.py        # Sprite extraction + synthetic map generation
+│   │   └── pacman_map_dataset.py       # Sprite extraction + synthetic map generation
 │   ├── models/
-│   │   ├── cnn_detector.py              # CNN architecture + inference
-│   │   ├── rl_agent.py                  # DQN / PPO wrapper (SB3)
-│   │   └── segmentation_detector.py     # Segmentation training + layered inference
+│   │   ├── cnn_detector.py             # CNN architecture + inference
+│   │   ├── rl_agent.py                 # PPO wrapper (SB3)
+│   │   └── segmentation_detector.py    # TinyU-Net training + layered inference
 │   └── utils/
-│       ├── mlflow_logger.py             # MLflow context-manager helper
-│       ├── device_helper.py             # CUDA/CPU device selection
-│       ├── lr_schedule.py               # Learning-rate schedule utilities
-│       ├── maskable_env.py              # Action-masking env wrapper
-│       ├── obs_sync.py                  # Observation synchronisation helpers
-│       ├── pacman_renderer.py           # Frame rendering for CNN pipeline
-│       ├── ppo_cnn.py                   # CNN feature extractor for PPO
-│       └── training_callbacks.py        # SB3 training callbacks
-├── models/                              # Trained checkpoints (git-ignored)
-├── tests/                               # pytest unit tests
-├── logs/                                # Training logs & TensorBoard events
-├── reports/                             # EDA figures, learning curves, diagnostics
-├── mlruns/                              # MLflow tracking data (git-ignored)
-├── pacman_screen_agent.py               # Top-level launcher for screen agent
-├── TRAINING_GUIDE.md                    # GPU-optimized training quick-start
+│       ├── mlflow_logger.py            # MLflow context-manager helper
+│       ├── device_helper.py            # CUDA/CPU device selection
+│       ├── lr_schedule.py              # Learning-rate schedule utilities
+│       ├── maskable_env.py             # Action-masking env wrapper
+│       ├── obs_sync.py                 # Observation synchronisation helpers
+│       ├── pacman_renderer.py          # Frame rendering for CNN pipeline
+│       ├── ppo_cnn.py                  # CNN feature extractor for PPO
+│       └── training_callbacks.py       # SB3 training callbacks
+├── models/
+│   ├── ppo_pacman.zip                  # Primary trained RL checkpoint
+│   ├── ppo_pacman_xl_strong.zip        # Best-run checkpoint
+│   └── segmentation_unet_long.pt       # Trained segmentation model
+├── tests/                              # pytest unit tests
+├── logs/                               # TensorBoard event files
+├── reports/                            # EDA figures, learning curves, diagnostics
+├── mlruns/                             # MLflow tracking (SQLite, git-ignored)
+├── pacman_screen_agent.py              # Top-level launcher for screen agent
+├── TRAINING_GUIDE.md                   # GPU-optimized training quick-start
 ├── requirements.txt
-├── group_project_guidelines.pdf
 └── README.md
 ```
 
 ## 4. Notebook Map (matches the course-required structure)
 
-| Required section | Implemented in |
-|------------------|----------------|
-| **Introduction** — problem & motivation | this README §1 + `notebooks/rl_env/01_env_testing.ipynb` |
-| **Data / Environment loading & validation** | `notebooks/rl_env/01_env_testing.ipynb` |
-| **EDA** — observation space, action space, reward distribution | `notebooks/rl_env/01_env_testing.ipynb` |
-| **Feature engineering** — state-vector design, frame preprocessing | `src/environment/pacman_env.py`, `notebooks/cnn_generated_screens/06_07_08.ipynb` |
-| **Modeling** — DQN, PPO, segmentation U-Net (≥3 techniques) | `notebooks/rl_env/02_rl_training.ipynb` + `notebooks/cnn_generated_screens/06_07_08.ipynb` |
-| **Evaluation** — episode return curves, rolling averages | `notebooks/rl_env/02_rl_training.ipynb` |
-| **Interpretability** — permutation importance + SHAP | `notebooks/rl_env/05_interpretability.ipynb` |
-| **Conclusions** | this README §8 + `notebooks/rl_env/04_pipeline_integration.ipynb` |
+All course-required sections are consolidated in a **single notebook**:
+`notebooks/pacman_ai_full_workflow.ipynb`
+
+| Required section | Notebook section |
+|------------------|-----------------|
+| **Introduction** — problem & motivation | §0 title cell |
+| **Data Loading & Validation** — environment, observation space | §1 |
+| **EDA** — observation space, action space, reward distribution | §1 |
+| **Synthetic dataset generation** — labelled frames, class distribution | §2 |
+| **Feature engineering** — multi-channel grid observation design | §3 |
+| **Modeling** — baseline, U-Net, slot-mask, MaskablePPO (≥3 techniques) | §4, §6, §7 |
+| **Evaluation** — mIoU, visual inspection, benchmark scores | §5, §10 |
+| **Interpretability** — permutation importance, SHAP beeswarm, waterfall | §8 |
+| **MLOps** — MLflow experiment tracking throughout | §4, §7, §9 |
+| **Conclusions** — findings, limitations, future work | §11 |
 
 ---
 
@@ -125,11 +128,22 @@ environment is implemented entirely in `src/environment/`.
 pytest tests/ -v
 ```
 
-**RL training** — open `notebooks/rl_env/02_rl_training.ipynb` and run all cells.
-Training, MLflow logging and evaluation are produced in-notebook. The
-trained checkpoint is saved to `models/ppo_pacman.zip`.
+**Full workflow notebook** — open `notebooks/pacman_ai_full_workflow.ipynb` and run all
+cells top-to-bottom. The notebook covers environment EDA, dataset generation, segmentation
+training, RL training, interpretability, learning curves, and the agent benchmark. All
+results are logged to MLflow automatically.
 
-**Segmentation training/evaluation/inference** — `notebooks/cnn_generated_screens/06_07_08.ipynb`.
+Trained checkpoints are committed under `models/`:
+- `models/ppo_pacman.zip` — primary RL checkpoint
+- `models/ppo_pacman_xl_strong.zip` — best-run checkpoint
+- `models/segmentation_unet_long.pt` — segmentation model
+
+**RL training only (script)**
+```bash
+python scripts/train_ppo_fair.py
+```
+
+**Segmentation inference** — `notebooks/pacman_ai_full_workflow.ipynb`.
 
 **Screenshot segmentation (labels + positions + class/group layers)**
 ```bash
@@ -166,6 +180,22 @@ The `infer-arcade` command additionally writes:
 - `prediction_arcade.json` with boxes mapped to original screenshot coordinates,
 - `pred_mask_full.png` projected back to the original screenshot size,
 - parsed HUD fields (`score_text`, `high_score_text`, lives icon detections).
+
+**Internal dual-agent lab** — side-by-side direct-state vs vision-from-render
+```bash
+python -m src.apps.dual_agent_lab \
+  --vision-model models/segmentation_unet_long.pt \
+  --seed 0 \
+  --fps 12
+```
+
+This lab uses the internal `GameState` simulation only. The left panel is fed
+directly from state, while the right panel renders the game and passes the
+frame through the segmentation pipeline before choosing an action. The HUD
+shows score, 1UP, lives icons, and cumulative pellet progress in level units.
+
+The previous live screen-capture agent is treated as legacy and is archived in
+`archive/legacy_screen_capture/`.
 
 **Synthetic labelled frames / sprite extraction**
 ```bash
@@ -206,15 +236,15 @@ an `index.json` file with pointers to all subfolders/files for easy loading.
 Ghost colors are mapped from dedicated sprite rows (red/pink/cyan/orange), so
 Blinky, Pinky, Inky and Clyde no longer share the same source strip.
 
-**End-to-end pipeline** — `notebooks/rl_env/04_pipeline_integration.ipynb`.
+**End-to-end pipeline** — `notebooks/pacman_ai_full_workflow.ipynb`.
 
-**Interpretability** — `notebooks/rl_env/05_interpretability.ipynb` loads
+**Interpretability** — `notebooks/pacman_ai_full_workflow.ipynb` §8 loads
 `models/ppo_pacman.zip` and produces permutation-importance and
 SHAP GradientExplainer figures for the MaskablePPO critic.
 
 **MLflow UI**
 ```bash
-mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db
+MLFLOW_TRACKING_URI="sqlite:////$(pwd)/mlruns/mlflow.db" mlflow ui --host 127.0.0.1 --port 5000
 # → http://localhost:5000
 ```
 

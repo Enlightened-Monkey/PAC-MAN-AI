@@ -5,14 +5,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
@@ -30,7 +28,7 @@ from src.utils.maskable_env import (
     wrap_with_action_masker,
 )
 from src.utils.mlflow_logger import MLflowLogger
-from src.utils.ppo_cnn import policy_kwargs
+from src.utils.ppo_cnn import policy_kwargs_for_size
 from src.utils.obs_sync import (
     obs_channel_config_from_checkpoint,
     peek_checkpoint,
@@ -42,6 +40,7 @@ _EPISODE_INFO_KEYS = (
     "score",
     "level",
     "pellet_completion",
+    "pellet_levels",
     "episode_deaths",
     "max_level_reached",
     "level_clears",
@@ -53,6 +52,7 @@ def make_env(
     seed: int,
     max_steps: int,
     *,
+    arcade_frame_repeat: int = 1,
     include_completion_plane: bool = False,
     include_frightened_plane: bool = False,
     include_derived_planes: bool = False,
@@ -63,6 +63,7 @@ def make_env(
         env = PacmanGridEnv(
             seed=seed,
             max_steps=max_steps,
+            arcade_frame_repeat=arcade_frame_repeat,
             step_penalty=-0.0005,
             reward_scale_div=50.0,
             death_penalty=-3.0,
@@ -90,9 +91,6 @@ def make_env(
 
 
 N_STACK = 4
-ENT_COEF_PHASE1 = 0.02
-ENT_COEF_PHASE2 = 0.02
-ENT_COEF_PLATEAU = 0.03
 MILESTONE_THRESHOLDS = (0.75, 0.85, 0.92, 0.97)
 MILESTONE_BONUSES = (250.0, 500.0, 1000.0, 2000.0)
 NEAR_MISS_PENALTY = -12.0
@@ -104,6 +102,7 @@ def build_vec_env(
     max_steps: int,
     n_stack: int = N_STACK,
     *,
+    arcade_frame_repeat: int = 1,
     include_completion_plane: bool = False,
     include_frightened_plane: bool = False,
     include_derived_planes: bool = False,
@@ -114,6 +113,7 @@ def build_vec_env(
         make_env(
             seed=i,
             max_steps=max_steps,
+            arcade_frame_repeat=arcade_frame_repeat,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
             include_derived_planes=include_derived_planes,
@@ -138,9 +138,15 @@ def _resolve_lr_schedule(mode: str, learning_rate: float):
 
 
 def train(args: argparse.Namespace) -> None:
-    models_dir = ROOT / "models"
+    checkpoint_stem_path = Path(args.checkpoint_stem).expanduser()
+    if checkpoint_stem_path.suffix == ".zip":
+        checkpoint_stem_path = checkpoint_stem_path.with_suffix("")
+    if not checkpoint_stem_path.is_absolute():
+        checkpoint_stem_path = ROOT / checkpoint_stem_path
+
+    models_dir = checkpoint_stem_path.parent
     models_dir.mkdir(exist_ok=True)
-    checkpoint_path = str(models_dir / "ppo_pacman")
+    checkpoint_path = str(checkpoint_stem_path)
     checkpoint_zip = checkpoint_path + ".zip"
     warm_start_path = str(Path(args.warm_start_from).expanduser()) if args.warm_start_from else None
     if warm_start_path and warm_start_path.endswith(".zip"):
@@ -148,18 +154,24 @@ def train(args: argparse.Namespace) -> None:
     tb_log = str(ROOT / "logs" / "tensorboard")
     use_maskable = not args.no_maskable
     lr_schedule = _resolve_lr_schedule(args.lr_schedule, args.learning_rate)
+    model_policy_kwargs = policy_kwargs_for_size(args.model_size)
 
     if args.fresh_start and warm_start_path:
         raise ValueError("Use either --fresh-start or --warm-start-from, not both.")
 
     if args.fresh_start:
         removed = 0
-        for p in models_dir.rglob("*.zip"):
-            p.unlink()
+        cp_file = Path(checkpoint_zip)
+        if cp_file.exists():
+            cp_file.unlink()
             removed += 1
+
         ckpt_dir = models_dir / "checkpoints"
         if ckpt_dir.exists():
-            shutil.rmtree(ckpt_dir)
+            stem_name = checkpoint_stem_path.name
+            for p in ckpt_dir.glob(f"{stem_name}_*_steps.zip"):
+                p.unlink()
+                removed += 1
         print(f"[Fresh start] Removed {removed} checkpoint(s); training from scratch.")
 
     resuming = os.path.exists(checkpoint_zip) and not args.fresh_start and not warm_start_path
@@ -186,9 +198,10 @@ def train(args: argparse.Namespace) -> None:
         learning_rate=lr_schedule,
         n_steps=args.n_steps,
         batch_size=args.batch_size,
-        ent_coef=ENT_COEF_PHASE1,
+        ent_coef=args.ent_coef_start,
         device=args.device,
         tensorboard_log=tb_log,
+        policy_kwargs_override=model_policy_kwargs,
     )
 
     if resuming:
@@ -199,6 +212,7 @@ def train(args: argparse.Namespace) -> None:
         vec_env = build_vec_env(
             args.n_envs,
             max_steps=initial_max_steps,
+            arcade_frame_repeat=args.arcade_frame_repeat,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
             include_derived_planes=include_derived_planes,
@@ -231,6 +245,7 @@ def train(args: argparse.Namespace) -> None:
         vec_env = build_vec_env(
             args.n_envs,
             max_steps=16000,
+            arcade_frame_repeat=args.arcade_frame_repeat,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
             include_derived_planes=include_derived_planes,
@@ -265,10 +280,10 @@ def train(args: argparse.Namespace) -> None:
                 gamma=0.995,
                 gae_lambda=0.95,
                 clip_range=0.2,
-                ent_coef=ENT_COEF_PHASE1,
+                ent_coef=args.ent_coef_start,
                 vf_coef=0.5,
                 max_grad_norm=0.5,
-                policy_kwargs=policy_kwargs(),
+                policy_kwargs=model_policy_kwargs,
                 verbose=0,
                 device=args.device,
                 tensorboard_log=tb_log,
@@ -288,6 +303,7 @@ def train(args: argparse.Namespace) -> None:
         vec_env = build_vec_env(
             args.n_envs,
             max_steps=initial_max_steps,
+            arcade_frame_repeat=args.arcade_frame_repeat,
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
             include_derived_planes=include_derived_planes,
@@ -307,10 +323,10 @@ def train(args: argparse.Namespace) -> None:
                 gamma=0.995,
                 gae_lambda=0.95,
                 clip_range=0.2,
-                ent_coef=ENT_COEF_PHASE1,
+                ent_coef=args.ent_coef_start,
                 vf_coef=0.5,
                 max_grad_norm=0.5,
-                policy_kwargs=policy_kwargs(),
+                policy_kwargs=model_policy_kwargs,
                 verbose=0,
                 device=args.device,
                 tensorboard_log=tb_log,
@@ -335,6 +351,7 @@ def train(args: argparse.Namespace) -> None:
     vec_env = build_vec_env(
         args.n_envs,
         max_steps=initial_max_steps,
+        arcade_frame_repeat=args.arcade_frame_repeat,
         include_completion_plane=include_completion_plane,
         include_frightened_plane=include_frightened_plane,
         include_derived_planes=include_derived_planes,
@@ -344,24 +361,28 @@ def train(args: argparse.Namespace) -> None:
     model.set_env(vec_env)
     validate_model_env(model, vec_env, context="train_ppo_fair after set_env")
 
-    with MLflowLogger(experiment_name="rl_training", run_name="ppo_fair_cnn") as logger:
+    with MLflowLogger(experiment_name=args.experiment_name, run_name=args.run_name) as logger:
         logger.log_params(
             {
                 "algorithm": "MaskablePPO" if use_maskable else "PPO",
-                "policy": "CnnPolicy (PacmanCNN 9ch x4 stack)",
+                "policy": "CnnPolicy (PacmanCNN)",
+                "model_size": args.model_size,
                 "n_envs": args.n_envs,
                 "n_steps": args.n_steps,
                 "batch_size": args.batch_size,
                 "learning_rate": args.learning_rate,
                 "lr_schedule": args.lr_schedule,
+                "arcade_frame_repeat": args.arcade_frame_repeat,
+                "eval_arcade_frame_repeat": args.eval_arcade_frame_repeat,
                 "gamma": 0.995,
                 "gae_lambda": 0.95,
                 "clip_range": 0.2,
-                "ent_coef_phase1": ENT_COEF_PHASE1,
-                "ent_coef_phase2": ENT_COEF_PHASE2,
-                "ent_coef_plateau": ENT_COEF_PLATEAU,
-                "ent_coef_floor": 0.01,
-                "ent_plateau_pellet_threshold": 0.75,
+                "ent_coef_start": args.ent_coef_start,
+                "ent_coef_final": args.ent_coef_final,
+                "ent_decay_fraction": args.ent_decay_fraction,
+                "ent_coef_plateau": args.ent_coef_plateau,
+                "ent_coef_floor": args.ent_coef_floor,
+                "ent_plateau_pellet_threshold": args.ent_plateau_pellet_threshold,
                 "milestone_thresholds": str(MILESTONE_THRESHOLDS),
                 "milestone_bonuses": str(MILESTONE_BONUSES),
                 "n_stack": N_STACK,
@@ -396,11 +417,18 @@ def train(args: argparse.Namespace) -> None:
             include_completion_plane=include_completion_plane,
             include_frightened_plane=include_frightened_plane,
             include_derived_planes=include_derived_planes,
+            arcade_frame_repeat=args.arcade_frame_repeat,
+            eval_arcade_frame_repeat=args.eval_arcade_frame_repeat,
             milestone_thresholds=MILESTONE_THRESHOLDS,
             milestone_bonuses=MILESTONE_BONUSES,
             near_miss_penalty=NEAR_MISS_PENALTY,
             late_endgame_fail_penalty=LATE_ENDGAME_FAIL_PENALTY,
-            ent_coef_plateau=ENT_COEF_PLATEAU,
+            ent_coef_start=args.ent_coef_start,
+            ent_coef_final=args.ent_coef_final,
+            ent_decay_fraction=args.ent_decay_fraction,
+            ent_coef_plateau=args.ent_coef_plateau,
+            ent_coef_floor=args.ent_coef_floor,
+            ent_plateau_pellet_threshold=args.ent_plateau_pellet_threshold,
             use_action_masks=use_maskable,
         )
         ckpt_cb = CheckpointCallback(
@@ -435,6 +463,7 @@ def train(args: argparse.Namespace) -> None:
             vec_env = build_vec_env(
                 args.n_envs,
                 max_steps=16000,
+                arcade_frame_repeat=args.arcade_frame_repeat,
                 include_completion_plane=include_completion_plane,
                 include_frightened_plane=include_frightened_plane,
                 include_derived_planes=include_derived_planes,
@@ -442,9 +471,7 @@ def train(args: argparse.Namespace) -> None:
                 use_action_masks=use_maskable,
             )
             model.set_env(vec_env)
-            model.ent_coef = ENT_COEF_PHASE2 if not resuming else max(
-                ENT_COEF_PHASE2, float(model.ent_coef)
-            )
+            model.ent_coef = max(args.ent_coef_final, float(model.ent_coef))
             if warm_starting:
                 print(
                     f"\n=== Warm start run: training until {target_timesteps:,} steps "
@@ -484,9 +511,30 @@ def train(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train fair PPO / MaskablePPO Pac-Man agent")
+    parser.add_argument("--experiment-name", type=str, default="rl_training")
+    parser.add_argument("--run-name", type=str, default="ppo_fair_cnn")
+    parser.add_argument(
+        "--checkpoint-stem",
+        type=str,
+        default="models/ppo_pacman",
+        help="Checkpoint path without extension, e.g. models/ppo_pacman_xl.",
+    )
+    parser.add_argument("--model-size", choices=("base", "large", "xl"), default="base")
     parser.add_argument("--n-envs", type=int, default=8)
     parser.add_argument("--n-steps", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=512)
+    parser.add_argument(
+        "--arcade-frame-repeat",
+        type=int,
+        default=4,
+        help="How many internal game frames to simulate per RL training decision.",
+    )
+    parser.add_argument(
+        "--eval-arcade-frame-repeat",
+        type=int,
+        default=1,
+        help="How many internal game frames to simulate per evaluation decision.",
+    )
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument(
         "--lr-schedule",
@@ -508,6 +556,17 @@ def main() -> None:
     )
     parser.add_argument("--no-maskable", action="store_true")
     parser.add_argument("--eval-every", type=int, default=100_000)
+    parser.add_argument("--ent-coef-start", type=float, default=0.02)
+    parser.add_argument("--ent-coef-final", type=float, default=0.012)
+    parser.add_argument(
+        "--ent-decay-fraction",
+        type=float,
+        default=0.95,
+        help="Fraction of total run used for linear decay ent_coef_start -> ent_coef_final.",
+    )
+    parser.add_argument("--ent-coef-floor", type=float, default=0.01)
+    parser.add_argument("--ent-coef-plateau", type=float, default=0.03)
+    parser.add_argument("--ent-plateau-pellet-threshold", type=float, default=0.75)
     parser.add_argument(
         "--no-derived-planes",
         action="store_true",
@@ -516,7 +575,8 @@ def main() -> None:
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
+        default="cpu",
+        help="Torch device used for training (e.g. 'cpu' or 'cuda').",
     )
     args = parser.parse_args()
     print(f"Device: {args.device}")

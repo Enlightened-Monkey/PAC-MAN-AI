@@ -18,52 +18,59 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
       "label": "pacman",
       "tile_position": [
-        16,
-        23
+        15,
+        21
       ],
       "bbox": [
-        124,
-        180,
+        116,
+        164,
         16,
         16
       ],
-      "direction": "right"
+      "direction": "down"
     },
     {
       "label": "blinky",
       "tile_position": [
-        14,
-        17
+        10,
+        11
       ],
       "bbox": [
-        108,
-        132,
+        76,
+        84,
         16,
         16
       ],
-      "direction": "right",
+      "direction": "left",
       "in_house": false,
       "eaten": false
     },
     {
       "label": "pinky",
       "tile_position": [
-        6,
-        9
+        2,
+        5
       ],
       "bbox": [
-        44,
-        68,
+        12,
+        36,
         16,
         16
       ],
-      "direction": "up",
+      "direction": "right",
       "in_house": false,
       "eaten": false
     },
@@ -717,7 +724,7 @@
       "pellet",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "pellet",
       "pellet",
       "pellet",
@@ -747,7 +754,7 @@
       "pellet",
       "wall",
       "wall",
-      "pellet",
+      "empty",
       "wall",
       "wall",
       "wall",
@@ -808,7 +815,7 @@
       "empty",
       "empty",
       "empty",
-      "empty",
+      "pellet",
       "pellet",
       "pellet",
       "pellet",
@@ -1033,15 +1040,15 @@
     ]
   ],
   "state": {
-    "score": 30,
+    "score": 40,
     "lives": 3,
-    "step_count": 15,
-    "pellets_eaten": 3,
+    "step_count": 33,
+    "pellets_eaten": 4,
     "mode": "scatter",
     "fruit_active": false
   },
   "hud": {
-    "score": 30,
+    "score": 40,
     "lives": 3,
     "level": 1,
     "fruit_active": false

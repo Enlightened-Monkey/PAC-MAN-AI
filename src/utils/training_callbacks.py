@@ -47,13 +47,17 @@ class ConsoleCallback(BaseCallback):
         include_completion_plane: bool = False,
         include_frightened_plane: bool = False,
         include_derived_planes: bool = False,
+        arcade_frame_repeat: int = 1,
+        eval_arcade_frame_repeat: int = 1,
         milestone_thresholds: tuple[float, ...] | None = None,
         milestone_bonuses: tuple[float, ...] | None = None,
         near_miss_penalty: float = -5.0,
         late_endgame_fail_penalty: float = -1.0,
         ent_coef_floor: float = 0.01,
+        ent_coef_start: float = 0.02,
+        ent_coef_final: float = 0.012,
+        ent_decay_fraction: float = 0.95,
         ent_coef_plateau: float = 0.015,
-        ent_coef_normal: float = 0.02,
         ent_plateau_pellet_threshold: float = 0.75,
         use_action_masks: bool = True,
     ) -> None:
@@ -71,13 +75,17 @@ class ConsoleCallback(BaseCallback):
         self.include_completion_plane = bool(include_completion_plane)
         self.include_frightened_plane = bool(include_frightened_plane)
         self.include_derived_planes = bool(include_derived_planes)
+        self.arcade_frame_repeat = int(arcade_frame_repeat)
+        self.eval_arcade_frame_repeat = int(eval_arcade_frame_repeat)
         self.milestone_thresholds = milestone_thresholds
         self.milestone_bonuses = milestone_bonuses
         self.near_miss_penalty = float(near_miss_penalty)
         self.late_endgame_fail_penalty = float(late_endgame_fail_penalty)
         self.ent_coef_floor = float(ent_coef_floor)
+        self.ent_coef_start = float(ent_coef_start)
+        self.ent_coef_final = float(ent_coef_final)
+        self.ent_decay_fraction = max(1e-6, float(ent_decay_fraction))
         self.ent_coef_plateau = float(ent_coef_plateau)
-        self.ent_coef_normal = float(ent_coef_normal)
         self.ent_plateau_pellet_threshold = float(ent_plateau_pellet_threshold)
         self.use_action_masks = bool(use_action_masks)
         self._plateau_log_streak = 0
@@ -90,13 +98,26 @@ class ConsoleCallback(BaseCallback):
         self._ep_scores: list[float] = []
         self._ep_levels: list[float] = []
         self._ep_pellet_pct: list[float] = []
+        self._ep_pellet_levels: list[float] = []
         self._ep_deaths: list[int] = []
         self._ep_max_level: list[int] = []
         self._ep_level_clears: list[int] = []
         self._ep_milestone_rewards: list[float] = []
         self._latest_losses: dict[str, float] = {}
+        self._best_score_ever: float = 0.0
+        self._best_reward_ever: float = -1e9
+        self._best_pellet_ever: float = 0.0
+        self._best_pellet_levels_ever: float = 0.0
         self._t0 = time.time()
         self._last_log_time = self._t0
+
+    def _scheduled_ent_coef(self, step: int) -> float:
+        span = max(1, self.target_timesteps - self.resume_from)
+        progressed = max(0, step - self.resume_from)
+        run_progress = min(1.0, progressed / span)
+        decay_progress = min(1.0, run_progress / self.ent_decay_fraction)
+        value = self.ent_coef_start + (self.ent_coef_final - self.ent_coef_start) * decay_progress
+        return max(self.ent_coef_floor, value)
 
     @staticmethod
     def _align_next(current: int, interval: int) -> int:
@@ -116,6 +137,9 @@ class ConsoleCallback(BaseCallback):
             self._ep_pellet_pct.append(
                 float(ep.get("pellet_completion", info.get("pellet_completion", 0.0)))
             )
+            self._ep_pellet_levels.append(
+                float(ep.get("pellet_levels", info.get("pellet_levels", 0.0)))
+            )
             self._ep_deaths.append(int(ep.get("episode_deaths", info.get("episode_deaths", 0))))
             self._ep_max_level.append(
                 int(ep.get("max_level_reached", info.get("max_level_reached", 1)))
@@ -125,6 +149,12 @@ class ConsoleCallback(BaseCallback):
             )
             self._ep_milestone_rewards.append(
                 float(ep.get("milestone_rewards", info.get("milestone_rewards", 0.0)))
+            )
+            self._best_score_ever = max(self._best_score_ever, self._ep_scores[-1])
+            self._best_reward_ever = max(self._best_reward_ever, self._ep_rewards[-1])
+            self._best_pellet_ever = max(self._best_pellet_ever, self._ep_pellet_pct[-1])
+            self._best_pellet_levels_ever = max(
+                self._best_pellet_levels_ever, self._ep_pellet_levels[-1]
             )
 
         n = self.num_timesteps
@@ -168,16 +198,22 @@ class ConsoleCallback(BaseCallback):
         recent_s = self._recent(self._ep_scores)
         recent_lv = self._recent(self._ep_levels)
         recent_p = self._recent(self._ep_pellet_pct)
+        recent_pl = self._recent(self._ep_pellet_levels)
         recent_d = self._recent(self._ep_deaths)
         recent_ml = self._recent(self._ep_max_level)
         recent_lc = self._recent(self._ep_level_clears)
         recent_ms = self._recent(self._ep_milestone_rewards)
 
         mean_r = float(np.mean(recent_r)) if recent_r else 0.0
+        max_r = float(np.max(recent_r)) if recent_r else 0.0
         mean_l = float(np.mean(recent_l)) if recent_l else 0.0
         mean_s = float(np.mean(recent_s)) if recent_s else 0.0
+        max_s = float(np.max(recent_s)) if recent_s else 0.0
         mean_lv = float(np.mean(recent_lv)) if recent_lv else 1.0
         mean_p = float(np.mean(recent_p)) if recent_p else 0.0
+        mean_pl = float(np.mean(recent_pl)) if recent_pl else 0.0
+        max_p = float(np.max(recent_p)) if recent_p else 0.0
+        max_pl = float(np.max(recent_pl)) if recent_pl else 0.0
         mean_d = float(np.mean(recent_d)) if recent_d else 0.0
         mean_ml = float(np.mean(recent_ml)) if recent_ml else 1.0
         level_clear_rate = (
@@ -185,7 +221,7 @@ class ConsoleCallback(BaseCallback):
         )
         mean_milestone = float(np.mean(recent_ms)) if recent_ms else 0.0
 
-        self._adjust_entropy(mean_p, level_clear_rate, n)
+        self._adjust_entropy(mean_pl, level_clear_rate, n)
 
         # Arcade score scaled the same way as pellet rewards (÷50) — comparable to return.
         mean_score_scaled = mean_s / 50.0
@@ -193,12 +229,21 @@ class ConsoleCallback(BaseCallback):
 
         metrics: dict[str, float] = {
             "mean_reward_50ep": mean_r,
+            "max_reward_50ep": max_r,
+            "best_reward_ever": self._best_reward_ever,
             "mean_ep_length_50": mean_l,
             "mean_score_50ep": mean_s,
+            "max_score_50ep": max_s,
+            "best_score_ever": self._best_score_ever,
             "mean_score_scaled_50ep": mean_score_scaled,
             "reward_score_gap_50ep": bonus_gap,
             "mean_level_50ep": mean_lv,
             "pellet_completion_50ep": mean_p,
+            "max_pellet_completion_50ep": max_p,
+            "best_pellet_completion_ever": self._best_pellet_ever,
+            "pellet_levels_50ep": mean_pl,
+            "max_pellet_levels_50ep": max_pl,
+            "best_pellet_levels_ever": self._best_pellet_levels_ever,
             "deaths_per_episode_50": mean_d,
             "max_level_50ep": mean_ml,
             "level_clear_rate_50ep": level_clear_rate,
@@ -228,12 +273,15 @@ class ConsoleCallback(BaseCallback):
         )
         print(sep)
         print(
-            f"  Episodes (50):  return {mean_r:7.2f}  |  score {mean_s:7.0f}  "
-            f"(scaled {mean_score_scaled:5.1f})  |  gap {bonus_gap:+6.2f}"
+            f"  Episodes (50):  return {mean_r:7.2f} (max {max_r:7.2f}  best {self._best_reward_ever:7.2f})"
+            f"  |  score {mean_s:7.0f} (max {max_s:7.0f}  best {self._best_score_ever:7.0f})"
+            f"  scaled {mean_score_scaled:5.1f}  |  gap {bonus_gap:+6.2f}"
         )
         print(
             f"  Progress:       level {mean_lv:4.2f}  |  max_lvl {mean_ml:4.2f}  "
-            f"|  clears {level_clear_rate*100:4.1f}%  |  pellets {mean_p*100:5.1f}%"
+            f"|  clears {level_clear_rate*100:4.1f}%  "
+            f"|  pellet_levels {mean_pl:4.2f} (max {max_pl:4.2f}  best {self._best_pellet_levels_ever:4.2f})"
+            f"  |  pellets {mean_p*100:5.1f}%"
         )
         print(
             f"  Survival:       length {mean_l:5.0f}  |  deaths/ep {mean_d:4.2f}  "
@@ -250,40 +298,42 @@ class ConsoleCallback(BaseCallback):
         print(sep)
 
     def _adjust_entropy(
-        self, mean_pellet: float, level_clear_rate: float, step: int
+        self, mean_pellet_levels: float, level_clear_rate: float, step: int
     ) -> None:
-        """Raise exploration when stuck at high pellet % with zero level clears."""
+        """Raise exploration when stuck close to one level of pellet progress with zero clears."""
         if not isinstance(self.model, (PPO, MaskablePPO)):
             return
 
-        current = float(getattr(self.model, "ent_coef", self.ent_coef_floor))
+        scheduled = self._scheduled_ent_coef(step)
+        target_ent = scheduled
+
         if level_clear_rate > 0.0:
             self._plateau_log_streak = 0
-            if self._entropy_boosted or current > self.ent_coef_normal:
-                self.model.ent_coef = max(self.ent_coef_normal, self.ent_coef_floor)
-                self._entropy_boosted = False
-                print(
-                    f"\n  [entropy] level clears detected @ {step:,} "
-                    f"-> ent_coef={self.model.ent_coef:.4f}"
-                )
-            return
-
-        if mean_pellet > self.ent_plateau_pellet_threshold:
+            self._entropy_boosted = False
+        elif mean_pellet_levels > self.ent_plateau_pellet_threshold:
             self._plateau_log_streak += 1
         else:
             self._plateau_log_streak = 0
 
-        if self._plateau_log_streak >= 3 and current < self.ent_coef_plateau:
-            self.model.ent_coef = self.ent_coef_plateau
+        if self._plateau_log_streak >= 3 and target_ent < self.ent_coef_plateau:
+            target_ent = self.ent_coef_plateau
             self._entropy_boosted = True
             print(
                 f"\n  [entropy] plateau detected @ {step:,} "
-                f"(pellets>{mean_pellet*100:.0f}%, clears=0, "
+                f"(pellet_levels>{mean_pellet_levels:.2f}, clears=0, "
                 f"threshold={self.ent_plateau_pellet_threshold:.0%}) "
                 f"-> ent_coef={self.ent_coef_plateau:.4f}"
             )
-        elif current < self.ent_coef_floor:
-            self.model.ent_coef = self.ent_coef_floor
+        elif self._entropy_boosted and self._plateau_log_streak == 0:
+            self._entropy_boosted = False
+            print(
+                f"\n  [entropy] plateau cleared @ {step:,} "
+                f"-> ent_coef={scheduled:.4f}"
+            )
+
+        current = float(getattr(self.model, "ent_coef", self.ent_coef_floor))
+        if abs(current - target_ent) > 1e-9:
+            self.model.ent_coef = target_ent
 
     def _run_eval(self, n: int) -> None:
         if not isinstance(self.model, (PPO, MaskablePPO)):
@@ -296,6 +346,7 @@ class ConsoleCallback(BaseCallback):
                     seed=s,
                     max_steps=8000,
                     human_fair=True,
+                    arcade_frame_repeat=self.eval_arcade_frame_repeat,
                     include_completion_plane=self.include_completion_plane,
                     include_frightened_plane=self.include_frightened_plane,
                     include_derived_planes=self.include_derived_planes,
@@ -350,6 +401,7 @@ class ConsoleCallback(BaseCallback):
             "scores": list(self._ep_scores),
             "levels": list(self._ep_levels),
             "pellet_completion": list(self._ep_pellet_pct),
+            "pellet_levels": list(self._ep_pellet_levels),
             "deaths": list(self._ep_deaths),
             "max_level": list(self._ep_max_level),
             "level_clears": list(self._ep_level_clears),

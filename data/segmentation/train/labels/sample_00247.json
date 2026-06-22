@@ -18,52 +18,59 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
       "label": "pacman",
       "tile_position": [
-        11,
+        15,
         23
       ],
       "bbox": [
-        84,
+        116,
         180,
         16,
         16
       ],
-      "direction": "left"
+      "direction": "right"
     },
     {
       "label": "blinky",
       "tile_position": [
-        14,
-        17
+        10,
+        11
       ],
       "bbox": [
-        108,
-        132,
+        76,
+        84,
         16,
         16
       ],
-      "direction": "right",
+      "direction": "left",
       "in_house": false,
       "eaten": false
     },
     {
       "label": "pinky",
       "tile_position": [
-        6,
-        9
+        10,
+        11
       ],
       "bbox": [
-        44,
-        68,
+        76,
+        84,
         16,
         16
       ],
-      "direction": "up",
+      "direction": "left",
       "in_house": false,
       "eaten": false
     },
@@ -714,7 +721,7 @@
       "pellet",
       "pellet",
       "pellet",
-      "empty",
+      "pellet",
       "wall",
       "wall",
       "pellet",
@@ -744,7 +751,7 @@
       "wall",
       "wall",
       "wall",
-      "empty",
+      "pellet",
       "wall",
       "wall",
       "pellet",
@@ -774,7 +781,7 @@
       "wall",
       "wall",
       "wall",
-      "empty",
+      "pellet",
       "wall",
       "wall",
       "pellet",
@@ -803,11 +810,11 @@
       "pellet",
       "pellet",
       "pellet",
-      "empty",
-      "empty",
-      "empty",
-      "empty",
       "pellet",
+      "pellet",
+      "empty",
+      "empty",
+      "empty",
       "pellet",
       "pellet",
       "pellet",
@@ -1033,15 +1040,15 @@
     ]
   ],
   "state": {
-    "score": 50,
+    "score": 10,
     "lives": 3,
-    "step_count": 15,
-    "pellets_eaten": 5,
+    "step_count": 3,
+    "pellets_eaten": 1,
     "mode": "scatter",
     "fruit_active": false
   },
   "hud": {
-    "score": 50,
+    "score": 10,
     "lives": 3,
     "level": 1,
     "fruit_active": false

@@ -161,6 +161,8 @@ PACMAN_START_DIR: int = ACTION_LEFT
 
 # Ghost spawn tiles (Blinky outside, others inside the house).
 GHOST_HOUSE_EXIT: tuple[int, int] = (11, 13)  # tile right above the door
+# Fixed eyes-return target used by all ghosts when returning home.
+GHOST_HOUSE_EYES_TARGET: tuple[int, int] = (11, 12)
 
 # Scatter corners (PDF: each ghost has a "favourite corner")
 SCATTER_CORNERS: dict[str, tuple[int, int]] = {
@@ -241,9 +243,13 @@ WAVE_SCHEDULE_LVL1: list[tuple[str, int]] = [
 FRIGHTENED_DURATION = 60   # ~6 s
 GHOST_EATEN_RETURN_DELAY = 5  # ticks an eaten ghost stays "eyes" before respawn
 
-# Cruise Elroy thresholds (level 1, from the PDF / Pac-Man Dossier)
-ELROY1_PELLETS_REMAINING = 20
-ELROY2_PELLETS_REMAINING = 10
+# Cruise Elroy thresholds expressed as pellets remaining, by level.
+ELROY1_PELLETS_REMAINING_BY_LEVEL: tuple[int, ...] = (
+    20, 30, 40, 40, 40, 50, 50, 50, 60, 60, 60, 80, 80, 80, 100, 100, 100, 100, 120, 120, 120,
+)
+ELROY2_PELLETS_REMAINING_BY_LEVEL: tuple[int, ...] = (
+    10, 15, 20, 20, 20, 25, 25, 25, 30, 30, 30, 40, 40, 40, 50, 50, 50, 50, 60, 60, 60,
+)
 
 # Personal dot-count release thresholds (level 1)
 DOT_RELEASE_LIMITS: dict[str, int] = {
@@ -281,6 +287,7 @@ class Ghost:
     eyes_timer: int = 0               # ticks left as eyes
     move_phase: int = 0               # used for tunnel / frightened slowdown
     pellets_at_entry: int = 0         # pellets eaten when entered house
+    pending_exit_dir: int = ACTION_LEFT
 
     # ----- helpers -----
 
@@ -291,6 +298,7 @@ class Ghost:
         self.eyes_timer = 0
         self.move_phase = 0
         self.pellets_at_entry = 0
+        self.pending_exit_dir = ACTION_LEFT
 
     @property
     def scatter_corner(self) -> tuple[int, int]:
@@ -310,6 +318,9 @@ class GameState:
 
     # populated by __post_init__ or __init__
     rng: np.random.Generator = field(default=None, repr=False)  # type: ignore[assignment]
+    # Deterministic frightened-turn PRNG (arcade-like): reset on level/life.
+    frightened_prng_state: int = 0
+    frightened_prng_seed: int = 0
     maze: np.ndarray = field(default=None, repr=False)          # type: ignore[assignment]
     score: int = 0
     lives: int = 3
@@ -334,6 +345,7 @@ class GameState:
     pellets_eaten: int = 0
     ticks_since_pellet: int = 0
     house_queue: list[str] = field(default_factory=list)
+    elroy_wait_for_clyde: bool = False
 
     # Cached
     total_pellets: int = 0
@@ -385,38 +397,40 @@ class GameState:
             ]
 
     def get_frightened_duration(self, level: int) -> int:
-        if level == 1:
-            return 60
-        elif level == 2:
-            return 40  # drops to 4s
-        elif level == 3:
-            return 30  # drops to 3s
-        elif level == 4:
-            return 20  # drops to 2s
-        elif level == 5:
-            return 20  # 2s
-        elif level == 6:
-            return 50  # 5s
-        elif level == 7:
-            return 20  # 2s
-        elif level == 8:
-            return 20  # 2s
-        elif level == 9:
-            return 10  # 1s
-        elif level == 10:
-            return 50  # 5s
-        elif level == 11:
-            return 20  # 2s
-        elif level == 12:
-            return 10  # 1s
-        elif level in (13, 14, 15, 16):
-            return 10  # 1s
-        elif level == 17:
-            return 20  # 2s
-        elif level == 18:
-            return 10  # 1s
-        else: # Level 19+
-            return 0
+        # Table A.1 frightened time in seconds, converted to 0.1s ticks.
+        frightened_seconds = {
+            1: 6,
+            2: 5,
+            3: 4,
+            4: 3,
+            5: 2,
+            6: 5,
+            7: 2,
+            8: 2,
+            9: 1,
+            10: 5,
+            11: 2,
+            12: 1,
+            13: 1,
+            14: 3,
+            15: 1,
+            16: 1,
+            17: 0,
+            18: 1,
+            19: 0,
+            20: 0,
+        }
+        return 10 * frightened_seconds.get(level, 0)
+
+    def get_ghost_house_timeout(self, level: int) -> int:
+        # 4 seconds on early boards, 3 seconds from level 5 onward.
+        return 40 if level < 5 else 30
+
+    def get_elroy_pellets_remaining(self, level: int, stage: int) -> int:
+        level_idx = min(max(level, 1), 21) - 1
+        if stage == 1:
+            return ELROY1_PELLETS_REMAINING_BY_LEVEL[level_idx]
+        return ELROY2_PELLETS_REMAINING_BY_LEVEL[level_idx]
 
     def get_dot_limit(self, ghost_name: str, level: int) -> int:
         if level == 1:
@@ -452,6 +466,10 @@ class GameState:
         elroy_pellets_threshold: int | None = None,
     ) -> None:
         self.rng = np.random.default_rng(seed)
+        # The arcade resets frightened PRNG at level start and after death.
+        base_seed = int(seed if seed is not None else 0) & 0xFF
+        self.frightened_prng_seed = base_seed
+        self.frightened_prng_state = base_seed
         self.elroy_pellets_threshold = elroy_pellets_threshold
         self.maze = DEFAULT_MAZE_ARR.copy()
         self.score = 0
@@ -473,6 +491,8 @@ class GameState:
             Ghost("Clyde",  spawn_pos=(14, 16), pos=(14, 16),
                   direction=ACTION_UP, in_house=True),
         ]
+        for ghost in self.ghosts:
+            ghost.pending_exit_dir = ACTION_LEFT
 
         # Wave schedule
         self._wave_schedule = self.get_wave_schedule(self.level)
@@ -494,6 +514,7 @@ class GameState:
         self.using_global_dot_counter = False
         self.global_dot_counter = 0
         self.extra_life_awarded = False
+        self.elroy_wait_for_clyde = False
 
         # Bonus fruit state
         self.fruit_active = False
@@ -538,6 +559,8 @@ class GameState:
         self.wave_index = 0
         self.wave_timer = self._wave_schedule[0][1]
         self.mode = self._wave_schedule[0][0]
+        self.frightened_prng_state = self.frightened_prng_seed
+        self.elroy_wait_for_clyde = False
         self._respawn(is_death=False)
 
     # ------------------------------------------------------------------
@@ -629,6 +652,8 @@ class GameState:
             for g in self.ghosts:
                 if not g.eaten:
                     g.direction = OPPOSITE[g.direction]
+                    if g.in_house:
+                        g.pending_exit_dir = OPPOSITE[g.pending_exit_dir]
         else:
             self.ticks_since_pellet += 1
 
@@ -721,6 +746,10 @@ class GameState:
             new_mode, new_len = self._wave_schedule[self.wave_index]
             if new_mode != self.mode:
                 self.pending_reversal = True
+                for ghost in self.ghosts:
+                    if ghost.in_house and not ghost.eaten:
+                        ghost.direction = OPPOSITE[ghost.direction]
+                        ghost.pending_exit_dir = OPPOSITE[ghost.pending_exit_dir]
             self.mode = new_mode
             self.wave_timer = new_len
         else:
@@ -734,45 +763,60 @@ class GameState:
     def _update_ghost_house_release(self) -> None:
         if not self.house_queue:
             return
-            
-        # 1) Stuck timer release (Global release timeout)
-        # If no dots have been eaten for 4.0 seconds (40 ticks), force-release the active ghost.
-        if self.ticks_since_pellet >= GLOBAL_RELEASE_TIMEOUT:
+
+        # 1) Stuck timer release — no dots eaten for 4 s (40 ticks) → force-release
+        if self.ticks_since_pellet >= self.get_ghost_house_timeout(self.level):
             next_ghost_name = self.house_queue[0]
             next_ghost = next(g for g in self.ghosts if g.name == next_ghost_name)
             self._release_ghost(next_ghost)
             self.house_queue.pop(0)
             self.ticks_since_pellet = 0
+            # Start the NEXT ghost's personal counter NOW (sequential counters)
+            self._reset_next_queue_entry()
             return
 
-        # 2) Dot-counter release
+        # 2) Dot-counter release (personal or global)
         next_ghost_name = self.house_queue[0]
         next_ghost = next(g for g in self.ghosts if g.name == next_ghost_name)
-        
+
         if self.using_global_dot_counter:
-            global_limits = {
-                "Pinky": 7,
-                "Inky": 17,
-                "Clyde": 32,
-            }
+            global_limits = {"Pinky": 7, "Inky": 17, "Clyde": 32}
             limit = global_limits.get(next_ghost_name, 999)
             if self.global_dot_counter >= limit:
                 self._release_ghost(next_ghost)
                 self.house_queue.pop(0)
+                self._reset_next_queue_entry()
             if self.global_dot_counter >= 32:
                 self.using_global_dot_counter = False
         else:
             limit = self.get_dot_limit(next_ghost_name, self.level)
+            # Personal counter: counts dots eaten SINCE this ghost became the
+            # active (front-of-queue) ghost — sequential, not from level start.
             personal_dots = self.pellets_eaten - next_ghost.pellets_at_entry
             if personal_dots >= limit:
                 self._release_ghost(next_ghost)
                 self.house_queue.pop(0)
+                self._reset_next_queue_entry()
+
+    def _reset_next_queue_entry(self) -> None:
+        """Reset the personal dot counter of the new front-of-queue ghost to NOW.
+
+        This gives each ghost its own counter that starts from the moment it
+        becomes the active (preferred) ghost — matching the arcade behaviour.
+        """
+        if self.house_queue:
+            new_front_name = self.house_queue[0]
+            new_front = next((g for g in self.ghosts if g.name == new_front_name), None)
+            if new_front is not None:
+                new_front.pellets_at_entry = self.pellets_eaten
 
     def _release_ghost(self, g: Ghost) -> None:
         """Teleport a ghost from inside the house up to the exit tile."""
         g.in_house = False
         g.pos = GHOST_HOUSE_EXIT
-        g.direction = ACTION_LEFT  # exit moving left, like in the arcade
+        g.direction = g.pending_exit_dir
+        if g.name == "Clyde":
+            self.elroy_wait_for_clyde = False
 
     # ------------------------------------------------------------------
     # Ghost movement
@@ -789,9 +833,9 @@ class GameState:
 
         # Eaten ghosts ("eyes") head straight back to the spawn tile
         if g.eaten:
-            target = g.spawn_pos
+            target = GHOST_HOUSE_EYES_TARGET
             self._step_towards(g, target, allow_reverse=False, in_red_zone_rule=False)
-            if g.pos == g.spawn_pos:
+            if g.pos == target:
                 # Re-enter the house and wait inside the queue
                 g.eaten = False
                 g.eyes_timer = 0
@@ -886,27 +930,50 @@ class GameState:
         g.direction = TIE_BREAK_ORDER[best_action_idx]
 
     def _move_random(self, g: Ghost) -> None:
-        """Lookahead random pathfinding during frightened mode."""
+        """
+        Lookahead frightened pathfinding (arcade-style deterministic PRNG).
+
+        Select one preferred direction from a tiny PRNG, then if that move is
+        blocked (or reverse), scan clockwise until a legal move is found.
+        """
         dr, dc = DIRECTION_DELTAS[g.direction]
         r_n1, c_n1 = self._wrap_tunnel((g.pos[0] + dr, g.pos[1] + dc))
-        
-        choices: list[tuple[int, tuple[int, int]]] = []
-        for action in (ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT):
+
+        def _legal(action: int) -> bool:
             if action == OPPOSITE[g.direction]:
-                continue
+                return False
             dr2, dc2 = DIRECTION_DELTAS[action]
             r_n2, c_n2 = self._wrap_tunnel((r_n1 + dr2, c_n1 + dc2))
-            if self._walkable_for_ghost(g, (r_n2, c_n2)):
-                choices.append((action, (r_n2, c_n2)))
-                
-        if not choices:
+            return self._walkable_for_ghost(g, (r_n2, c_n2))
+
+        # 8-bit LCG is sufficient and deterministic for frightened turns.
+        self.frightened_prng_state = (self.frightened_prng_state * 17 + 43) & 0xFF
+
+        # Preferred first-try direction from 2 lowest PRNG bits.
+        index_to_dir = (ACTION_UP, ACTION_LEFT, ACTION_DOWN, ACTION_RIGHT)
+        preferred = index_to_dir[self.frightened_prng_state & 0x03]
+
+        # Clockwise fallback order (U->R->D->L->U).
+        clockwise_next = {
+            ACTION_UP: ACTION_RIGHT,
+            ACTION_RIGHT: ACTION_DOWN,
+            ACTION_DOWN: ACTION_LEFT,
+            ACTION_LEFT: ACTION_UP,
+        }
+
+        action = preferred
+        for _ in range(4):
+            if _legal(action):
+                g.pos = (r_n1, c_n1)
+                g.direction = action
+                return
+            action = clockwise_next[action]
+
+        # Dead-end fallback.
+        if not _legal(preferred):
             g.pos = (r_n1, c_n1)
             g.direction = OPPOSITE[g.direction]
             return
-            
-        action, _ = choices[int(self.rng.integers(len(choices)))]
-        g.pos = (r_n1, c_n1)
-        g.direction = action
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -933,7 +1000,10 @@ class GameState:
         
         self.ghost_combo = 0
         self.frightened_timer = 0
+        self.frightened_prng_state = self.frightened_prng_seed
         self.ticks_since_pellet = 0
+        for ghost in self.ghosts:
+            ghost.pending_exit_dir = ACTION_LEFT
         
         # Activate global dot counter after death
         clyde = next(g for g in self.ghosts if g.name == "Clyde")
@@ -943,6 +1013,7 @@ class GameState:
         else:
             self.using_global_dot_counter = False
             self.global_dot_counter = 0
+        self.elroy_wait_for_clyde = bool(is_death)
 
     # ------------------------------------------------------------------
     # Per-ghost Target Tile algorithms (PDF "Architektura Behawioralna")
@@ -955,9 +1026,9 @@ class GameState:
         elroy_limit = (
             self.elroy_pellets_threshold
             if self.elroy_pellets_threshold is not None
-            else ELROY1_PELLETS_REMAINING
+            else self.get_elroy_pellets_remaining(self.level, 1)
         )
-        elroy = (g.name == "Blinky") and (remaining <= elroy_limit)
+        elroy = (g.name == "Blinky") and (not self.elroy_wait_for_clyde) and (remaining <= elroy_limit)
 
         if self.mode == "scatter" and not elroy:
             return g.scatter_corner
@@ -1085,9 +1156,11 @@ class GameState:
         obs.append(min(self.level / 10.0, 1.0))
         # Cruise Elroy phase for Blinky
         elroy_remaining = int(np.sum(np.isin(self.maze, [TILE_PELLET, TILE_POWER])))
-        threshold = self.elroy_pellets_threshold or ELROY1_PELLETS_REMAINING
-        elroy2_thr = min(threshold // 2, ELROY2_PELLETS_REMAINING)
-        if elroy_remaining <= elroy2_thr:
+        threshold = self.elroy_pellets_threshold or self.get_elroy_pellets_remaining(self.level, 1)
+        elroy2_thr = self.get_elroy_pellets_remaining(self.level, 2)
+        if self.elroy_wait_for_clyde:
+            elroy_phase = 0
+        elif elroy_remaining <= elroy2_thr:
             elroy_phase = 2
         elif elroy_remaining <= threshold:
             elroy_phase = 1

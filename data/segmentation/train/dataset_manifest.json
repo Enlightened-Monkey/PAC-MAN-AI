@@ -19,7 +19,14 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
-  "general_sheet_path": "Arcade - Pac-Man - Miscellaneous - General Sprites.png"
+  "general_sheet_path": "/home/mwrona/PAC-MAN-AI/data/raw/sprites/Arcade - Pac-Man - Miscellaneous - General Sprites.png"
 }

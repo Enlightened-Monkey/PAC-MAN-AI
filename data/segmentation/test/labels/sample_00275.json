@@ -18,52 +18,59 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
       "label": "pacman",
       "tile_position": [
-        12,
+        11,
         23
       ],
       "bbox": [
-        92,
+        84,
         180,
         16,
         16
       ],
-      "direction": "down"
+      "direction": "left"
     },
     {
       "label": "blinky",
       "tile_position": [
-        12,
-        17
+        9,
+        14
       ],
       "bbox": [
-        92,
-        132,
+        68,
+        108,
         16,
         16
       ],
-      "direction": "right",
+      "direction": "down",
       "in_house": false,
       "eaten": false
     },
     {
       "label": "pinky",
       "tile_position": [
-        4,
-        1
+        6,
+        5
       ],
       "bbox": [
-        28,
-        4,
+        44,
+        36,
         16,
         16
       ],
-      "direction": "left",
+      "direction": "up",
       "in_house": false,
       "eaten": false
     },
@@ -1035,7 +1042,7 @@
   "state": {
     "score": 40,
     "lives": 3,
-    "step_count": 43,
+    "step_count": 37,
     "pellets_eaten": 4,
     "mode": "scatter",
     "fruit_active": false

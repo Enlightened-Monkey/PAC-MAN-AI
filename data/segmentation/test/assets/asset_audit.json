@@ -1,0 +1,354 @@
+{
+  "sheet": "/home/mwrona/PAC-MAN-AI/data/raw/sprites/Arcade - Pac-Man - Miscellaneous - General Sprites.png",
+  "threshold": 8,
+  "assets": {
+    "maze_with_pellets": {
+      "crop": [
+        0,
+        0,
+        224,
+        248
+      ],
+      "raw_size": [
+        224,
+        248
+      ],
+      "raw_non_black_bbox": [
+        0,
+        0,
+        224,
+        248
+      ],
+      "processed_size": [
+        224,
+        248
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        224,
+        248
+      ],
+      "processed_alpha_occupancy": 0.1079
+    },
+    "maze_empty": {
+      "crop": [
+        228,
+        0,
+        452,
+        248
+      ],
+      "raw_size": [
+        224,
+        248
+      ],
+      "raw_non_black_bbox": [
+        0,
+        0,
+        224,
+        248
+      ],
+      "processed_size": [
+        224,
+        248
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        224,
+        248
+      ],
+      "processed_alpha_occupancy": 0.0868
+    },
+    "pellet": {
+      "crop": [
+        8,
+        8,
+        16,
+        16
+      ],
+      "raw_size": [
+        8,
+        8
+      ],
+      "raw_non_black_bbox": [
+        3,
+        3,
+        5,
+        5
+      ],
+      "processed_size": [
+        8,
+        8
+      ],
+      "processed_alpha_bbox": [
+        3,
+        3,
+        5,
+        5
+      ],
+      "processed_alpha_occupancy": 0.0625
+    },
+    "power_pellet": {
+      "crop": [
+        8,
+        24,
+        16,
+        32
+      ],
+      "raw_size": [
+        8,
+        8
+      ],
+      "raw_non_black_bbox": [
+        0,
+        0,
+        8,
+        8
+      ],
+      "processed_size": [
+        8,
+        8
+      ],
+      "processed_alpha_bbox": [
+        2,
+        2,
+        6,
+        6
+      ],
+      "processed_alpha_occupancy": 0.1875
+    },
+    "pacman": {
+      "crop": [
+        456,
+        0,
+        472,
+        16
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        1,
+        1,
+        10,
+        14
+      ],
+      "processed_size": [
+        9,
+        13
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        9,
+        13
+      ],
+      "processed_alpha_occupancy": 0.6496
+    },
+    "fruit": {
+      "crop": [
+        488,
+        48,
+        504,
+        64
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        2,
+        2,
+        14,
+        14
+      ],
+      "processed_size": [
+        12,
+        12
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        12,
+        12
+      ],
+      "processed_alpha_occupancy": 0.4931
+    },
+    "blinky": {
+      "crop": [
+        456,
+        64,
+        472,
+        80
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        1,
+        1,
+        15,
+        15
+      ],
+      "processed_size": [
+        14,
+        14
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        14,
+        14
+      ],
+      "processed_alpha_occupancy": 0.8061
+    },
+    "pinky": {
+      "crop": [
+        456,
+        80,
+        472,
+        96
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        1,
+        1,
+        15,
+        15
+      ],
+      "processed_size": [
+        14,
+        14
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        14,
+        14
+      ],
+      "processed_alpha_occupancy": 0.8061
+    },
+    "inky": {
+      "crop": [
+        456,
+        96,
+        472,
+        112
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        1,
+        1,
+        15,
+        15
+      ],
+      "processed_size": [
+        14,
+        14
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        14,
+        14
+      ],
+      "processed_alpha_occupancy": 0.8061
+    },
+    "clyde": {
+      "crop": [
+        456,
+        112,
+        472,
+        128
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        1,
+        1,
+        15,
+        15
+      ],
+      "processed_size": [
+        14,
+        14
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        14,
+        14
+      ],
+      "processed_alpha_occupancy": 0.8061
+    },
+    "frightened_ghost": {
+      "crop": [
+        584,
+        64,
+        600,
+        80
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        1,
+        1,
+        15,
+        15
+      ],
+      "processed_size": [
+        14,
+        14
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        14,
+        14
+      ],
+      "processed_alpha_occupancy": 0.8061
+    },
+    "ghost_eyes": {
+      "crop": [
+        584,
+        80,
+        600,
+        96
+      ],
+      "raw_size": [
+        16,
+        16
+      ],
+      "raw_non_black_bbox": [
+        4,
+        4,
+        14,
+        9
+      ],
+      "processed_size": [
+        10,
+        5
+      ],
+      "processed_alpha_bbox": [
+        0,
+        0,
+        10,
+        5
+      ],
+      "processed_alpha_occupancy": 0.64
+    }
+  }
+}

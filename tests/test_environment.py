@@ -610,6 +610,16 @@ class TestPacmanGridEnv:
         info = env._info()
         assert info["pellet_completion"] == pytest.approx(50 / env._state.total_pellets)
 
+    def test_pellet_levels_tracks_clears_plus_partial(self):
+        env = PacmanGridEnv(seed=0)
+        env.reset()
+        env._level_clears = 2
+        env._state.pellets_eaten = 50
+        info = env._info()
+        expected = 2 + (50 / env._state.total_pellets)
+        assert info["pellet_levels"] == pytest.approx(expected)
+        assert info["level_progress"] == pytest.approx(expected)
+
     def test_level_plane_in_observation(self):
         env = PacmanGridEnv(seed=0)
         env.reset()
@@ -712,5 +722,35 @@ class TestPacmanGridEnv:
         env = PacmanGridEnv(seed=0, easy_endgame=True)
         env.reset()
         assert env._state.elroy_pellets_threshold == 5
+
+    def test_invalid_arcade_frame_repeat_raises(self):
+        with pytest.raises(ValueError, match="arcade_frame_repeat"):
+            PacmanGridEnv(seed=0, arcade_frame_repeat=0)
+
+    def test_arcade_frame_repeat_advances_multiple_internal_steps(self):
+        env = PacmanGridEnv(seed=0, arcade_frame_repeat=4)
+        env.reset()
+        _, _, terminated, truncated, info = env.step(ACTION_LEFT)
+        assert not terminated
+        assert not truncated
+        assert env._state.step_count == 4
+        assert info["step"] == 4
+        assert info["decision_step"] == 1
+        assert info["frame_repeat"] == 4
+
+    def test_step_penalty_scales_with_arcade_frame_repeat(self):
+        import types
+
+        env = PacmanGridEnv(seed=0, arcade_frame_repeat=3, step_penalty=-0.5)
+        env.reset()
+
+        def _mock_noop_step(state, action: int):
+            state.step_count += 1
+            return 0, False
+
+        env._state.step = types.MethodType(_mock_noop_step, env._state)
+        _, reward, _, _, _ = env.step(ACTION_LEFT)
+        expected = (-0.5 * 3) + env._idle_penalty
+        assert reward == pytest.approx(expected)
 
 

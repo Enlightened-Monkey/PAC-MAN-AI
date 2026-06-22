@@ -18,7 +18,14 @@
     "clyde": 10,
     "frightened_ghost": 11,
     "ghost_eyes": 12,
-    "fruit": 13
+    "fruit_cherry": 13,
+    "fruit_strawberry": 14,
+    "fruit_orange": 15,
+    "fruit_apple": 16,
+    "fruit_melon": 17,
+    "fruit_galaxian": 18,
+    "fruit_bell": 19,
+    "fruit_key": 20
   },
   "objects": [
     {
@@ -38,16 +45,16 @@
     {
       "label": "blinky",
       "tile_position": [
-        13,
-        11
+        18,
+        18
       ],
       "bbox": [
-        100,
-        84,
+        140,
+        140,
         16,
         16
       ],
-      "direction": "left",
+      "direction": "down",
       "in_house": false,
       "eaten": false
     },
@@ -98,6 +105,20 @@
       "direction": "left",
       "in_house": true,
       "eaten": false
+    },
+    {
+      "label": "fruit_melon",
+      "tile_position": [
+        16,
+        14
+      ],
+      "bbox": [
+        124,
+        108,
+        16,
+        16
+      ],
+      "variant": "melon"
     }
   ],
   "grid_labels": [
@@ -712,7 +733,7 @@
       "pellet",
       "pellet",
       "pellet",
-      "empty",
+      "pellet",
       "empty",
       "empty",
       "wall",
@@ -747,7 +768,7 @@
       "empty",
       "wall",
       "wall",
-      "empty",
+      "pellet",
       "wall",
       "wall",
       "wall",
@@ -798,9 +819,9 @@
       "pellet",
       "wall",
       "wall",
-      "empty",
-      "empty",
-      "empty",
+      "pellet",
+      "pellet",
+      "pellet",
       "empty",
       "empty",
       "empty",
@@ -891,8 +912,8 @@
       "pellet",
       "wall",
       "wall",
-      "empty",
-      "empty",
+      "pellet",
+      "pellet",
       "pellet",
       "pellet",
       "wall",
@@ -1033,17 +1054,17 @@
     ]
   ],
   "state": {
-    "score": 210,
-    "lives": 0,
+    "score": 140,
+    "lives": 1,
     "step_count": 127,
-    "pellets_eaten": 21,
+    "pellets_eaten": 14,
     "mode": "chase",
-    "fruit_active": false
+    "fruit_active": true
   },
   "hud": {
-    "score": 210,
-    "lives": 0,
+    "score": 140,
+    "lives": 1,
     "level": 1,
-    "fruit_active": false
+    "fruit_active": true
   }
 }

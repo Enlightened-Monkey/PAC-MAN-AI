@@ -293,6 +293,7 @@ class PacmanGridEnv(gym.Env):
         self,
         seed: int | None = None,
         max_steps: int = 5000,
+        arcade_frame_repeat: int = 1,
         step_penalty: float = -0.0005,
         reward_scale_div: float = 50.0,
         death_penalty: float = -3.0,
@@ -323,6 +324,7 @@ class PacmanGridEnv(gym.Env):
         self.render_mode = render_mode
         self._seed = seed
         self._max_steps = int(max_steps)
+        self._frame_repeat = int(arcade_frame_repeat)
         self._step_penalty = float(step_penalty)
         self._reward_div = float(reward_scale_div)
         self._death_penalty = float(death_penalty)
@@ -336,6 +338,8 @@ class PacmanGridEnv(gym.Env):
         self._endgame_progress_threshold = float(endgame_progress_threshold)
         self._endgame_progress_bonus = float(endgame_progress_bonus)
         self._late_endgame_fail_penalty = float(late_endgame_fail_penalty)
+        if self._frame_repeat <= 0:
+            raise ValueError("arcade_frame_repeat must be >= 1")
         if human_fair and enable_milestones:
             self._milestone_thresholds = tuple(
                 milestone_thresholds or _DEFAULT_MILESTONE_THRESHOLDS
@@ -366,11 +370,12 @@ class PacmanGridEnv(gym.Env):
             elroy = 5
 
         self._state = GameState(seed=seed, elroy_pellets_threshold=elroy)
+        self._decision_step_count = 0
         self._episode_start_lives = 3
         self._episode_deaths = 0
         self._max_level_reached = 1
         self._level_clears = 0
-        self._milestones_hit: set[float] = set()
+        self._milestones_hit = set()
         self._episode_milestone_reward = 0.0
 
         self.action_space = spaces.Discrete(4)
@@ -387,7 +392,7 @@ class PacmanGridEnv(gym.Env):
         self._neighbor_count_map = self._build_neighbor_count_map()
         self._junction_map = (self._neighbor_count_map >= 3).astype(np.float32)
         self._dead_end_map = (self._neighbor_count_map <= 1).astype(np.float32)
-        self._prev_potential: float = 0.0
+        self._prev_potential = 0.0
 
     # ------------------------------------------------------------------
     # Gym API
@@ -409,6 +414,7 @@ class PacmanGridEnv(gym.Env):
         self._episode_deaths = 0
         self._max_level_reached = self._state.level
         self._level_clears = 0
+        self._decision_step_count = 0
         self._milestones_hit = set()
         self._episode_milestone_reward = 0.0
         return self._obs(), self._info()
@@ -444,12 +450,21 @@ class PacmanGridEnv(gym.Env):
         return best
 
     def step(self, action: int):
+        self._decision_step_count += 1
         lives_before = self._state.lives
         prev_score = self._state.score
         prev_pos = self._state.pacman_pos
         completion_before_death = self._pellet_completion()
         completion_before = completion_before_death
-        _, done = self._state.step(int(action))
+        done = False
+        level_cleared = False
+        for _ in range(self._frame_repeat):
+            _, done = self._state.step(int(action))
+            if done:
+                break
+            if self._state._all_pellets_eaten() and self._state.lives > 0:
+                level_cleared = True
+                break
         completion_after = self._pellet_completion()
         deaths_now = lives_before - self._state.lives
         if deaths_now > 0:
@@ -459,7 +474,7 @@ class PacmanGridEnv(gym.Env):
         # optimisation objective == score maximisation. Death is a flat,
         # modest penalty (NOT -500/50=-10 which drowned out pellet signal).
         score_delta = self._state.score - prev_score
-        reward = score_delta / self._reward_div + self._step_penalty
+        reward = score_delta / self._reward_div + (self._step_penalty * self._frame_repeat)
         if self._state.pacman_pos == prev_pos:
             reward += self._idle_penalty
         if score_delta == 50 and self._min_ghost_dist(self._state) > _GHOST_NEAR_FOR_POWER:
@@ -478,7 +493,7 @@ class PacmanGridEnv(gym.Env):
         reward = self._apply_milestone_rewards(reward)
 
         # Level completion bonus when clearing all pellets
-        if self._state._all_pellets_eaten() and self._state.lives > 0:
+        if level_cleared:
             reward += self._level_bonus / self._reward_div
             self._state._next_level()
             self._level_clears += 1
@@ -641,15 +656,19 @@ class PacmanGridEnv(gym.Env):
         st = self._state
         total = max(st.total_pellets, 1)
         pellet_completion = st.pellets_eaten / total
+        pellet_levels = self._level_clears + pellet_completion
         return {
             "score": st.score,
             "lives": st.lives,
             "step": st.step_count,
+            "decision_step": self._decision_step_count,
             "level": st.level,
             "pellets_eaten": st.pellets_eaten,
             "total_pellets": st.total_pellets,
             "pellet_completion": pellet_completion,
-            "level_progress": (st.level - 1) + pellet_completion,
+            "pellet_levels": pellet_levels,
+            "frame_repeat": self._frame_repeat,
+            "level_progress": pellet_levels,
             "episode_deaths": self._episode_deaths,
             "max_level_reached": self._max_level_reached,
             "level_clears": self._level_clears,
